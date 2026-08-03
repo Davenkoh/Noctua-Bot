@@ -15,7 +15,7 @@ from telegram import InlineKeyboardMarkup, Update
 from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
-from .. import config, db, jobs, keyboards, util
+from .. import config, db, jobs, keyboards, texts, util
 
 logger = logging.getLogger(__name__)
 
@@ -384,11 +384,13 @@ async def cb_nudge(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     ago = util.elapsed_min(util.finished_at(latest))
+    nudger = util.nudger_html(db.get_user(update.effective_user.id))
     try:
         await context.bot.send_message(
             latest["user_id"],
-            f"🔔 <b>Nudge!</b> Someone needs <b>{machine.label}</b>. Your laundry "
-            f"finished {ago} min ago, please clear it when you can 🙏",
+            f"🔔 <b>Nudge!</b> {nudger} needs <b>{machine.label}</b>. Your laundry "
+            f"finished {ago} min ago, please clear it when you can 🙏\n"
+            f"{texts.COLLECT_RULE_OWNER}",
         )
     except TelegramError as exc:
         logger.warning("Nudge to %s failed: %s", latest["user_id"], exc)

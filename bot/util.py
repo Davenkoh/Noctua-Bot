@@ -106,6 +106,20 @@ def who_html(row) -> str:
     return f"{mention_html(row['user_id'], None, row['name'])} ({room})"
 
 
+def nudger_html(row) -> str:
+    """``Daven @daven_koh`` for the person sending a nudge.
+
+    Deliberately named and tagged rather than "Someone": the nudged resident
+    should be able to reply to a human, and a nudge you have to sign is a
+    nudge people think twice about sending.
+    """
+    if row is None:
+        return "Someone"
+    if row["username"]:
+        return f"{esc(row['name'])} @{esc(row['username'])}"
+    return mention_html(row["user_id"], None, row["name"])
+
+
 def handle_plain(username: str | None, name: str) -> str:
     """Handle for callback alerts / button labels, which are never parsed."""
     return f"@{username}" if username else name
