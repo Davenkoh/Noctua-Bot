@@ -46,10 +46,17 @@ def build_application(token: str | None = None) -> Application:
     if not resolved:
         raise ValueError(MISSING_TOKEN)
 
+    # Updates are handled concurrently. An announcement is a sequential fan-out
+    # of two messages per resident, so at 120 rooms it holds the handler for
+    # about a minute; on the default setting every laundry tap in that window
+    # would sit in the queue behind it. The contested writes this exposes are
+    # the ones bot.db already settles in a transaction (see start_session and
+    # claim_nudge), which tests/test_concurrency.py covers.
     application = (
         Application.builder()
         .token(resolved)
         .defaults(Defaults(parse_mode=ParseMode.HTML))
+        .concurrent_updates(True)
         .post_init(post_init)
         .build()
     )
