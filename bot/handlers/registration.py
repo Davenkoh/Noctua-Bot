@@ -13,7 +13,7 @@ from telegram.ext import (
     filters,
 )
 
-from .. import commands, config, db, jobs, keyboards, rooms, util
+from .. import commands, config, db, jobs, keyboards, rooms, texts, util
 
 # Onboarding states
 ASK_NAME, ASK_ROOM, ASK_LETTER, CONFIRM = range(4)
@@ -41,26 +41,8 @@ def _menu(update: Update) -> ReplyKeyboardMarkup:
 
 
 def _overview(row, *, is_leader: bool, greeting: str) -> str:
-    """The /start card. Deliberately short: the two things the bot is for, the
-    details we hold on you, and a pointer to ❓ Help for everything else."""
-    lines = [
-        greeting,
-        "",
-        "🧺 <b>Laundry</b> — live state of our 2 washers and 2 dryers, so you "
-        "don't walk down for nothing. Put your things in, pay, then tap "
-        "🧺 <b>Laundry menu</b> → your machine → your cycle. I'll message you "
-        "when it's done.",
-        "",
-        "📢 <b>Announcements</b> — dorm news reaches you here, so keep this "
-        "chat unmuted.",
-        "",
-        f"👤 {util.esc(row['name'])} · 🏠 {util.esc(row['room'])}",
-        f"Anything wrong with the bot, or questions? Text @{util.esc(config.CONTACT_HANDLE)}.",
-    ]
-    if is_leader:
-        lines += ["", "📢 <b>Announce</b> sends a message to every resident."]
-    lines += ["", "❓ <b>Help</b> has the full guide."]
-    return "\n".join(lines)
+    """The /start card, which is the same card ❓ Help shows."""
+    return texts.overview(row, is_leader=is_leader, greeting=greeting)
 
 
 # --------------------------------------------------------------------------
