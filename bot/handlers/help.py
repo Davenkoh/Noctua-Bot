@@ -38,7 +38,7 @@ HELP_TEXT = (
     "the 🧺 <b>Laundry menu</b>, which forces all four back to 🟢 free.\n\n"
     "<b>Fix your details</b>\n"
     "👤 <b>Profile</b> (/profile) shows the name and room saved for you. "
-    f"Something wrong? Message @{config.CONTACT_HANDLE} to get it fixed. "
+    f"Anything wrong with the bot, or questions? Text @{config.CONTACT_HANDLE}. "
     "/cancel backs out of anything."
 )
 

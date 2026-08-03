@@ -55,7 +55,7 @@ def _overview(row, *, is_leader: bool, greeting: str) -> str:
         "chat unmuted.",
         "",
         f"👤 {util.esc(row['name'])} · 🏠 {util.esc(row['room'])}",
-        f"Wrong? Message @{util.esc(config.CONTACT_HANDLE)}.",
+        f"Anything wrong with the bot, or questions? Text @{util.esc(config.CONTACT_HANDLE)}.",
     ]
     if is_leader:
         lines += ["", "📢 <b>Announce</b> sends a message to every resident."]
@@ -361,7 +361,7 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"👤 <b>{util.esc(row['name'])}</b>\n"
         f"🏠 {util.esc(row['room'])}\n"
         f"💬 {handle}\n\n"
-        f"Wrong details? Message @{util.esc(config.CONTACT_HANDLE)} to get them fixed.",
+        f"Wrong details, or anything else? Text @{util.esc(config.CONTACT_HANDLE)}.",
         reply_markup=_menu(update),
     )
 
