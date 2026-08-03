@@ -40,6 +40,23 @@ BTN_ANNOUNCE = "📢 Announce"
 
 GREETING = "🦉 Hi Owlet, <b>{name}</b>!"
 
+# Leaders get their own headed block rather than one more numbered line under
+# announcements. The card is what a leader skims once and half-remembers, and
+# a house leader who reads past this never uses the broadcast at all.
+LEADER_BLOCK = (
+    "<b>🔑 You're a Noctua leader</b>",
+    "You hold a leadership position in the house, so you can send an "
+    "announcement to every resident from this chat.",
+    f"1. Tap “{BTN_ANNOUNCE}” (or /announce), then write your announcement "
+    "here. Text, photos, videos and files all work, and you can send several "
+    "messages in one go.",
+    "2. Edit or undo anything you sent, and preview the whole thing, before it "
+    "goes anywhere.",
+    "3. Tap ✅ <b>Send</b> and it reaches every resident, headed "
+    "“📢 Noctua Announcement” rather than your name.",
+    "Nothing leaves this chat until you tap Send.",
+)
+
 
 def _contact() -> str:
     return f"@{util.esc(config.CONTACT_HANDLE)}"
@@ -72,10 +89,7 @@ def overview(row, *, is_leader: bool = False, greeting: str | None = None) -> st
         "this chat unmuted.",
     ]
     if is_leader:
-        lines.append(
-            f"2. Tap “{BTN_ANNOUNCE}” (or /announce) to send an announcement "
-            "to every resident."
-        )
+        lines += ["", *LEADER_BLOCK]
 
     lines += [
         "",
