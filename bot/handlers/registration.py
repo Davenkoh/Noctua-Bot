@@ -115,7 +115,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             _overview(
                 row,
                 is_leader=config.is_leader(user.username),
-                greeting=f"🦉 Welcome back, <b>{util.esc(row['name'])}</b>!",
+                greeting=texts.greeting(row["name"]),
             ),
             reply_markup=_menu(update),
         )
@@ -172,7 +172,7 @@ async def _start_from_roster(update: Update, context: ContextTypes.DEFAULT_TYPE)
         _overview(
             db.get_user(user.id),
             is_leader=config.is_leader(user.username),
-            greeting="🦉 Welcome to <b>Noctua Bot</b>! Found you on the resident list.",
+            greeting=texts.greeting(entry["name"]),
         ),
         reply_markup=_menu(update),
     )
@@ -270,7 +270,7 @@ async def confirm_ok(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         _overview(
             db.get_user(user.id),
             is_leader=config.is_leader(user.username),
-            greeting="You're set! 🎉",
+            greeting=texts.greeting(name),
         ),
         reply_markup=_menu(update),
     )

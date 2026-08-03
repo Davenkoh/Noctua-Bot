@@ -12,14 +12,41 @@ longer exists.
 
 from __future__ import annotations
 
-from . import config, keyboards, util
+from . import config, util
 
 # How long a finished load may sit in a machine before anyone may move it.
+# The rule is written from both sides: the card tells the person waiting for a
+# machine, the nudge tells the person whose load is in it. Same number, so it
+# lives here rather than being typed into each message.
 COLLECT_GRACE_MIN = 15
+
+COLLECT_RULE_WAITING = (
+    f"If a machine finished more than {COLLECT_GRACE_MIN} minutes ago and the "
+    "load is still sitting in it, you have the right to take it out."
+)
+COLLECT_RULE_OWNER = (
+    f"If a load is left more than {COLLECT_GRACE_MIN} minutes after it "
+    "finishes, the next user has the right to take it out."
+)
+
+# Button names as the leader wrote them in the card. They are prose here, so
+# they are title-cased rather than pulled from bot.keyboards, whose captions
+# are lower case ("🧺 Laundry menu"). Rename a button and this needs the same
+# edit.
+BTN_LAUNDRY = "🧺 Laundry Menu"
+BTN_STATUS = "📊 Machine Status"
+BTN_NUDGE = "🔔 Nudge last user"
+BTN_ANNOUNCE = "📢 Announce"
+
+GREETING = "🦉 Hi Owlet, <b>{name}</b>!"
 
 
 def _contact() -> str:
     return f"@{util.esc(config.CONTACT_HANDLE)}"
+
+
+def greeting(name: str) -> str:
+    return GREETING.format(name=util.esc(name))
 
 
 def overview(row, *, is_leader: bool = False, greeting: str | None = None) -> str:
@@ -33,11 +60,7 @@ def overview(row, *, is_leader: bool = False, greeting: str | None = None) -> st
             "<b>Your profile</b>",
             f"👤 {util.esc(row['name'])} · 🏠 {util.esc(row['room'])}",
             f"Wrong? Text {_contact()}.",
-            # Access survives a rename (residents are keyed by their Telegram
-            # account, not their tag), but the resident list is matched by tag,
-            # so it goes stale until a leader updates it.
-            f"Changed your Telegram tag? Text {_contact()} so the resident "
-            "list stays right.",
+            f"Changed your Telegram tag? Text {_contact()} or you lose access.",
             "",
         ]
 
@@ -50,23 +73,22 @@ def overview(row, *, is_leader: bool = False, greeting: str | None = None) -> st
     ]
     if is_leader:
         lines.append(
-            f"2. <b>{keyboards.MENU_ANNOUNCE}</b> (or /announce) sends a "
-            "message to every resident."
+            f"2. Tap “{BTN_ANNOUNCE}” (or /announce) to send an announcement "
+            "to every resident."
         )
 
     lines += [
         "",
-        "<b>🧺 Laundry</b>",
-        f"1. Tap <b>{keyboards.MENU_LAUNDRY}</b> to see the laundry options.",
+        "<b>🧺 Laundry Queue System</b>",
+        f"1. Tap “{BTN_LAUNDRY}” to see the laundry options.",
         "2. When you put a load in, tap the machine you're using, then how "
-        "long the cycle is. I'll message you when it should be done.",
-        f"3. Tap <b>{keyboards.HUB_STATUS}</b> to see which machines are in "
-        "use, and by who.",
-        f"4. To nudge the person before you, tap <b>{keyboards.HUB_PING}</b> "
-        "and I'll send them a notification.",
+        "long the cycle is. This bot will message you when your load is done.",
+        f"3. Tap “{BTN_STATUS}” to see which machines are in use, when it was "
+        "last used, and by who.",
+        f"4. To nudge the person before you, tap “{BTN_NUDGE}” and this bot "
+        "will send them a notification.",
         "",
-        f"If a machine finished more than {COLLECT_GRACE_MIN} minutes ago and "
-        "the load is still sitting in it, you have the right to take it out.",
+        COLLECT_RULE_WAITING,
         "",
         f"Anything wrong with the bot, or questions? Text {_contact()}.",
     ]
