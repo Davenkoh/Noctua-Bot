@@ -21,9 +21,12 @@ rsync -az --delete \
     --exclude '.venv' --exclude '__pycache__' --exclude '*.pyc' \
     --exclude 'noctua.db*' --exclude 'noctua.log' --exclude 'backups' \
     --exclude '.env' --exclude '.git' \
-    "$PROJECT/bot" "$PROJECT/tests" "$PROJECT/deploy" \
+    "$PROJECT/bot" "$PROJECT/tests" "$PROJECT/deploy" "$PROJECT/roster" \
     "$PROJECT/requirements.txt" "$PROJECT/README.md" "$PROJECT/SPEC.md" \
     "$REMOTE"
+# roster/ rides along so a correction file written on the Mac is on the server
+# ready for `python -m bot.roster_fix`. It is data, not code: nothing reads it
+# at runtime, and the bot is restarted below either way.
 
 if [ "${1:-}" = "--with-db" ]; then
     echo "==> Uploading local database (one time only)"
