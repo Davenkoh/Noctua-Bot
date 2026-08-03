@@ -1,0 +1,19 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+
+*.log
+
+# Server address and SSH key path for ./deploy/push.sh
+deploy/server.env
+
+# Resident details (names, rooms, telegram handles) never go in the repo.
+# Only the made-up example is committed.
+roster/*.txt
+!roster/*.example.txt
+backups/

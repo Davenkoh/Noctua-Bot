@@ -1,0 +1,32 @@
+[Unit]
+Description=Noctua Bot (Telegram dorm bot)
+Documentation=https://t.me/rc4noctuabot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/noctua-bot
+EnvironmentFile=/opt/noctua-bot/.env
+ExecStart=/opt/noctua-bot/.venv/bin/python -m bot.main
+
+# Long polling holds one Telegram connection; only ever run ONE instance.
+Restart=always
+RestartSec=5
+# Give up only if it crash-loops hard, so a bad deploy is visible in status.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+StandardOutput=append:/opt/noctua-bot/noctua.log
+StandardError=append:/opt/noctua-bot/noctua.log
+
+# Basic hardening: the bot only needs its own directory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/opt/noctua-bot
+
+[Install]
+WantedBy=multi-user.target

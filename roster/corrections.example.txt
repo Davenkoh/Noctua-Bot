@@ -1,0 +1,17 @@
+; Template for a roster correction file. Copy it, edit it, run it:
+;
+;   ./.venv/bin/python -m bot.roster_fix roster/corrections.txt           show the plan
+;   ./.venv/bin/python -m bot.roster_fix roster/corrections.txt --apply   write it
+;
+; One line per room:   <room>  <@handle | empty | unknown>  [name]
+;
+; Leave the name out to keep the name already on the roster for that room,
+; which is what you want when only the handle was wrong. ';' starts a comment.
+;
+; Real correction files hold resident details, so keep them out of git. Only
+; this example, with made-up people in it, is committed.
+
+#06-27   @alicetan       Alice Tan     ; new handle and a new name for the room
+#07-03   @bobbylee                     ; handle was wrong, keep the name on file
+#08-01C  empty                         ; nobody lives there
+#08-12F  unknown                       ; the entry on file is wrong, right one unknown
