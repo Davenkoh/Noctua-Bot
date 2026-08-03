@@ -17,7 +17,14 @@ SUITE_LETTERS = "ABCDEF"
 FLOOR_ROOMS: dict[str, list[str]] = {
     "06": [f"{n:02d}" for n in range(1, 28)],
     "07": [f"{n:02d}" for n in range(1, 28)],
-    "08": [f"{n:02d}" for n in range(1, 28)],
+    "08": [f"{n:02d}" for n in range(1, 28) if n != 11],
+}
+
+# Numbers inside a floor's range that are not student rooms. Worth naming
+# rather than just rejecting: "there is no #08-11" reads as a bug to whoever
+# typed it, so the message says what the space actually is.
+NOT_A_ROOM: dict[str, str] = {
+    "08-11": "that's the RF's home",
 }
 
 # Suite rooms (subdivided into units A-F; a unit letter is required for
@@ -73,7 +80,7 @@ def validate_room(text: str) -> RoomResult:
     if floor not in FLOOR_ROOMS:
         return _bad_floor()
     if room not in FLOOR_ROOMS[floor]:
-        return _bad_room(floor)
+        return _bad_room(floor, f"{floor}-{room}")
 
     base = f"{floor}-{room}"
     is_suite = base in SUITE_ROOMS
@@ -134,7 +141,10 @@ def _bad_floor() -> RoomResult:
     return RoomResult(ok=False, error=f"Noctua rooms are on floors 06–08 ({_FORMAT_HINT}).")
 
 
-def _bad_room(floor: str) -> RoomResult:
+def _bad_room(floor: str, base: str) -> RoomResult:
+    reason = NOT_A_ROOM.get(base)
+    if reason is not None:
+        return RoomResult(ok=False, error=f"There's no #{base}, {reason} ({_FORMAT_HINT}).")
     valid_rooms = FLOOR_ROOMS[floor]
     low, high = valid_rooms[0], valid_rooms[-1]
     msg = f"Floor {floor} only has rooms {low}–{high} ({_FORMAT_HINT})."

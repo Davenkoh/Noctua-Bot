@@ -58,6 +58,17 @@ def test_invalid_inputs_produce_errors() -> int:
     return len(cases)
 
 
+def test_08_11_is_not_a_room() -> int:
+    # The RF's home. 06-11 and 07-11 are ordinary suites, so the gap is only
+    # on floor 08 and the message has to say why rather than quote a range.
+    result = validate_room("08-11")
+    assert not result.ok and not result.needs_letter, result
+    assert result.error and "RF" in result.error, result.error
+    assert validate_room("06-11").needs_letter, "06-11 is still a suite"
+    assert validate_room("07-11").needs_letter, "07-11 is still a suite"
+    return 3
+
+
 def test_letter_not_allowed_for_non_suite_room() -> int:
     result = validate_room("06-27A")
     assert not result.ok
@@ -91,6 +102,7 @@ def main() -> None:
         test_suite_rooms_with_letter_normalize,
         test_suite_room_missing_letter_needs_letter,
         test_invalid_inputs_produce_errors,
+        test_08_11_is_not_a_room,
         test_letter_not_allowed_for_non_suite_room,
         test_invalid_letter_for_suite_room,
         test_suite_letters_returns_a_through_f,
