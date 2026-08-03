@@ -186,8 +186,8 @@ def test_roster_add_accepts_a_no_room_entry() -> int:
         room, error = roster_add.parse_room(word)
         assert error is None and room == "", f"{word!r} should mean 'no room', got {room!r}"
 
-    assert _quietly(lambda: roster_add.add(["@yiwennt", "Test User 1", "none"])) == 0
-    entry = db.roster_lookup("yiwennt")
+    assert _quietly(lambda: roster_add.add(["@carol", "Carol", "none"])) == 0
+    entry = db.roster_lookup("carol")
     assert entry is not None, "the test user must be whitelisted"
     assert entry["room"] == "", f"expected a blank room, got {entry['room']!r}"
     return 5
@@ -212,8 +212,8 @@ def _fake_update(username: str) -> tuple[object, list[str]]:
 
 
 def test_a_no_room_entry_is_asked_for_details_instead_of_registered() -> int:
-    _fresh_roster([("alice", "Alice", "#06-27"), ("yiwennt", "Test User 1", "")])
-    update, sent = _fake_update("yiwennt")
+    _fresh_roster([("alice", "Alice", "#06-27"), ("carol", "Carol", "")])
+    update, sent = _fake_update("carol")
     context = SimpleNamespace(user_data={}, bot=None)
 
     state = asyncio.run(registration._start_from_roster(update, context))

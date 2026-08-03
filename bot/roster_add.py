@@ -2,7 +2,7 @@
 
     python -m bot.roster_add @derrick8765 "Derrick" "#07-10"
     python -m bot.roster_add @a "A" "#06-05" @b "B" "#07-11C"     (several at once)
-    python -m bot.roster_add @yiwennt "Test User 1" none          (no room yet)
+    python -m bot.roster_add @carol "Carol" none                  (no room yet)
     python -m bot.roster_add --remove @derrick8765
     python -m bot.roster_add --list
 
