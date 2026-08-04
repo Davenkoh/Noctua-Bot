@@ -15,5 +15,6 @@ deploy/server.env
 # Resident details (names, rooms, telegram handles) never go in the repo.
 # Only the made-up example is committed.
 roster/*.txt
+roster/archive/
 !roster/*.example.txt
 backups/

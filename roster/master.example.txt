@@ -1,0 +1,21 @@
+; Example of roster/master.txt, the master resident list (the real file holds
+; resident details, so it is gitignored; this fake one shows the format).
+;
+; One line per room, columns separated by "|":
+;   room | full name | display name | telegram handle | note
+;
+; The display name is what the bot shows: first name, plus surname when two
+; residents share one. A blank handle means none is known yet, so that
+; resident cannot register. The note column is free text for humans; the bot
+; never stores it (leaders are configured by LEADER_USERNAMES in .env).
+;
+; Edit the real file, then load it into the bot's database:
+;
+;   ./.venv/bin/python -m bot.roster_sync              preview what would change
+;   ./.venv/bin/python -m bot.roster_sync --apply      write it
+
+#06-27   | TAN XIAO MING, ALICE           | Alice         | @alicetan81              | leader
+#07-11A  | LEE JUN JIE, BOB               | Bob Lee       | @bobjjlee                |
+#07-11B  | ONG JUN JIE, BOB               | Bob Ong       | @bobongz                 | two Bobs, so both carry surnames
+#08-01C  | SMITH, CAROL JANE              | Carol         | @caroljsmith             | exchange
+#08-21   | NG WEI                         | Wei           |                          | no handle yet, cannot register

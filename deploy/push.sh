@@ -2,7 +2,9 @@
 # Runs on the Mac. Pushes the current code to the Oracle server and restarts it.
 #
 #   ./deploy/push.sh              push code, restart, show status
-#   ./deploy/push.sh --with-db    also upload the local noctua.db (first deploy only)
+#
+# The server's noctua.db and .env are never touched: the database is live
+# state (registrations, laundry sessions) and only ever changes on the server.
 #
 # Reads the server address from deploy/server.env (created during setup).
 set -euo pipefail
@@ -24,15 +26,9 @@ rsync -az --delete \
     "$PROJECT/bot" "$PROJECT/tests" "$PROJECT/deploy" "$PROJECT/roster" \
     "$PROJECT/requirements.txt" "$PROJECT/README.md" "$PROJECT/SPEC.md" \
     "$REMOTE"
-# roster/ rides along so a correction file written on the Mac is on the server
-# ready for `python -m bot.roster_fix`. It is data, not code: nothing reads it
-# at runtime, and the bot is restarted below either way.
-
-if [ "${1:-}" = "--with-db" ]; then
-    echo "==> Uploading local database (one time only)"
-    "${SSH[@]}" 'sudo systemctl stop noctua-bot || true'
-    scp -i "$SSH_KEY" "$PROJECT/noctua.db" "$REMOTE"
-fi
+# roster/ rides along so the master list edited on the Mac is on the server
+# ready for `python -m bot.roster_sync --apply`. It is data, not code: nothing
+# reads it at runtime, and the bot is restarted below either way.
 
 echo "==> Installing dependencies and restarting"
 "${SSH[@]}" '/opt/noctua-bot/.venv/bin/pip install -q -r /opt/noctua-bot/requirements.txt && sudo systemctl restart noctua-bot'

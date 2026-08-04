@@ -78,72 +78,47 @@ Everything below is a plain file — edit it and restart the bot (`Ctrl+C` then 
 
 ## Resident whitelist (roster)
 
-By default, anyone can register with `/start`. If a dorm leader wants to restrict the bot to actual residents, they can import an Excel sheet listing everyone who's allowed in.
+By default, anyone can register with `/start`. To restrict the bot to actual residents, keep the master resident list in **`roster/master.txt`** and load it into the bot. That file is the single source of truth: to change anything about who lives where, edit the line there and sync.
 
-The sheet needs one header row with a **name** column, a **room** column, and a **Telegram** column (anything with "tele", "tag", "handle", or "username" in the header works) — data rows underneath. Then, on the server:
+One line per room, columns separated by `|` (see `roster/master.example.txt` for a fake sample; the real file holds resident details and stays out of git):
 
-```bash
-cd "Noctua Bot"                                        # this project folder
-.venv/bin/python -m bot.roster_import residents.xlsx   # path to the sheet
+```
+; room   | full name             | display name | telegram handle | note
+#06-27   | TAN XIAO MING, ALICE  | Alice        | @alicetan81     | leader
+#08-21   | NG WEI                | Wei          |                 | no handle yet
 ```
 
-The importer prints a summary: how many residents were imported, plus a list of any rows it had to skip (with the reason) so they can be fixed and re-imported.
+- **room** — the key. Suite rooms (`06-01`, `06-11`, `06-12`, `07-01`, `07-11`, `07-12`, `08-01`, `08-12`) must include their unit letter, e.g. `#08-01C`.
+- **full name** — the resident as the dorm's records know them. For people, never stored by the bot.
+- **display name** — what the bot shows: first name, plus surname whenever two residents share one (Chloe Oon / Chloe Ong / Chloe Ng...). Must be unique across the file.
+- **telegram handle** — what registration matches on. Blank means none known yet, so that resident cannot register until one is filled in.
+- **note** — free text for humans (exchange student, leader, open questions). Never stored. Leaders are configured by `LEADER_USERNAMES` in `.env`, so a leadership change means updating both.
+
+Then load it:
+
+```bash
+.venv/bin/python -m bot.roster_sync            # show what would change, write nothing
+.venv/bin/python -m bot.roster_sync --apply    # make the database match the file
+.venv/bin/python -m bot.roster_sync --show     # print the roster as the bot stores it
+```
+
+The sync makes the database's roster table **match the file exactly**: new handles are added, changed rooms and names are updated, and handles no longer in the file are removed, all in one transaction, safe to run while the bot is polling. The plan is printed either way and nothing is written without `--apply`. A file with any bad line writes nothing at all, and an empty file is refused (an empty roster would open registration to anyone).
+
+Remember the live bot runs on the server, so the loop for a real change is: edit `roster/master.txt` on the Mac, `./deploy/push.sh` (the roster folder rides along), then run the sync **on the server**.
 
 A few rules worth knowing:
 
 - **Matching is by Telegram username**, not name. A resident without a `@username` set is told to add one (Telegram → Settings → Username) and tap `/start` again.
-- **Suite rooms** (`06-01`, `06-11`, `06-12`, `07-01`, `07-11`, `07-12`, `08-01`, `08-12`) must include the unit letter in the sheet, e.g. `#08-01C` — a suite room listed without a letter is treated as a bad row and skipped.
-- Rows with problems (no handle, bad room, etc.) are **listed and skipped**; every other valid row still imports.
-- **Re-importing replaces the whole list** — it's not additive, so always upload the complete, current resident list rather than just the new additions.
-- **An empty or never-imported roster means open registration** — the current, pre-whitelist behaviour — so nothing changes until the first sheet is imported.
-- Residents who **registered before a roster was imported keep their access** — they're not retroactively removed just because they're missing from a later sheet.
-- After a successful import, a new resident's `/start` skips the name and room questions entirely: the sheet is the source of truth, so they land straight on the menu.
-
-### Fixing the roster afterwards
-
-Re-importing the whole sheet is a big hammer for "this one room has the wrong tag". Two smaller tools handle day-to-day corrections, and both are safe to run while the bot is polling.
-
-**By room**, which is the usual case (the handle listed for a room is wrong, or the room changed hands):
-
-```bash
-.venv/bin/python -m bot.roster_fix roster/corrections.txt           # show the plan
-.venv/bin/python -m bot.roster_fix roster/corrections.txt --apply   # write it
-.venv/bin/python -m bot.roster_fix --apply "#06-22" @lehan "Le Han" # or one room inline
-```
-
-Each line of the file is a room, then a handle (or `empty` / `unknown`), then an optional name. A `;` comments out the rest of a line, and `roster/corrections.example.txt` is a template to copy:
-
-```
-#06-22   @startstrongendstronger   Le Han
-#06-25   @laurelite                ; handle was wrong, keep the name on file
-#08-01D  empty
-#08-21   unknown
-```
-
-Real correction files hold resident details, so they're kept out of git (`.gitignore` covers `roster/*.txt` apart from the example).
-
-- **Leave the name out** to keep whatever name the roster already has for that room, which is what you want when only the handle was wrong.
-- **The room is the key**, so anyone else listed at that room is removed in the same transaction. That is the point: adding the right handle without dropping the wrong one would leave both whitelisted.
-- `empty` means nobody lives there; `unknown` means the entry on file is wrong and the right handle isn't known yet. Both clear the room.
-- **Nothing is written without `--apply`.** The plan is printed either way, including warnings when a handle you're changing has already registered (roster edits don't touch anyone who is already in, see below).
-- A room or a handle may only appear **once per run**; a repeat is reported and skipped rather than guessed at.
-
-**By handle**, for adding or removing one person:
-
-```bash
-.venv/bin/python -m bot.roster_add @derrick8765 "Derrick" "#07-10"
-.venv/bin/python -m bot.roster_add @yiwennt "Test User 1" none    # whitelisted, no room
-.venv/bin/python -m bot.roster_add --remove @derrick8765
-.venv/bin/python -m bot.roster_add --list
-```
-
-A room of `none` (or `-`, `tbd`, `?`) whitelists someone **without claiming a room** for them: test accounts, guests, or a resident whose room isn't settled. They get in, and `/start` asks them for a name and room the way it does when no roster exists at all.
-
-One thing neither tool does: **fixing the roster does not un-register anyone who already tapped `/start`.** Registration copies the name and room across once, and residents keep their access afterwards, by design. Both tools print a warning when that applies, and `/resetme` (leaders) or a fresh registration is what actually moves someone's stored details.
+- **An empty or never-synced roster means open registration**, so nothing changes until the first sync.
+- Residents who **registered before a roster was synced keep their access**; they're not retroactively removed just because they're missing from a later version of the file.
+- After a sync, a new resident's `/start` skips the name and room questions entirely: the file is the source of truth, so they land straight on the menu.
+- **Syncing does not un-register anyone who already tapped `/start`.** Registration copies the name and room across once, and residents keep their access afterwards, by design. The plan prints a warning whenever that gap applies, and `/resetme` (leaders) or a fresh registration is what actually moves someone's stored details.
 
 ## Data
 
-All state — registered residents, machine sessions, and the resident whitelist (if imported) — lives in a single SQLite file, `noctua.db`, created automatically at the project root the first time the bot runs. Back it up by copying that file (e.g. before an upgrade, or on a regular schedule if it's on a VPS). Deleting it resets the bot to a blank slate, and everyone (and the roster) would need to be set up again.
+All **live state** — registered residents, machine sessions, and the loaded roster — lives in a single SQLite file, `noctua.db`, created automatically at the project root the first time the bot runs. Back it up by copying that file (e.g. before an upgrade, or on a regular schedule if it's on a VPS). Deleting it resets the bot to a blank slate, and everyone would need to register again.
+
+The roster table inside it is just the loaded copy of `roster/master.txt`; the file is the one to edit, the database is what the bot reads at runtime.
 
 ## Troubleshooting
 
