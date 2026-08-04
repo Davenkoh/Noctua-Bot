@@ -361,7 +361,14 @@ Replace the single-message flow with a draft composer:
 - Empty-draft Send → alert "Draft is empty".
 - Keep `allow_reentry=True`; re-entering resets the draft.
 
-## 3. Roster whitelist (Excel sheet of residents)
+## 3. Roster whitelist (Excel sheet of residents) — import CLI superseded in v1.3
+
+> **v1.3 (2026-08-04):** the Excel import never happened; the resident list arrived as
+> text instead. `bot/roster_import.py`, `bot/roster_add.py` and `bot/roster_fix.py` are
+> replaced by a single source of truth, `roster/master.txt`, loaded by
+> `bot/roster_sync.py`. Everything below about *enforcement* still holds exactly (the
+> `/start` gate, the db contract, open registration on an empty roster); only the way
+> rows get into the roster table changed. See "v1.3 changes" at the end of this file.
 
 Only people on a leader-provided roster may use the bot. The user will supply an `.xlsx` with columns for name, room and telegram tag; import happens on the server via CLI, not through Telegram.
 
@@ -474,3 +481,58 @@ Residents never confirm collection *after* the timer ends — the machine auto-f
 **B. No "stopped early" state in any render.** A finished-early session is just `done`. Legacy `cancelled` (and `collected`) rows must still render as a normal free machine with a valid last user (`finished {clock}`), never as a special case.
 
 **C. Last-used info is mandatory on every free machine**, in both the status board and the machine view, and must carry all three facts: **who** (name + room), **their handle**, and **when** (`finished {clock} ({X} min ago)`). This is separate from the board's `Updated {clock}` footer, which stays. Machines never used show `🟢 Free · not used yet`.
+
+# v1.3 changes (2026-08-04) — one source of truth for residents
+
+Supersedes the import CLI in "v1.1 §3 Roster whitelist". Enforcement is unchanged:
+`/start` still gates on `db.roster_count() > 0`, an empty roster still means open
+registration, and residents who registered earlier still keep access.
+
+## 1. `roster/master.txt` is the resident list
+
+One line per room, `|`-separated, `;` comments a whole line:
+
+```
+#06-27   | TAN XIAO MING, ALICE  | Alice   | @alicetan81 | leader
+#08-21   | NG WEI                | Wei     |             | no handle yet
+```
+
+- **room** — the key; suite rooms need their unit letter (`#08-01C`).
+- **full name** — as the dorm records it. For people; never stored.
+- **display name** — what the bot shows. First name, plus surname whenever two
+  residents share one (Chloe Oon / Chloe Ong / Chloe Ng). **Must be unique**: two
+  residents rendered identically cannot be told apart in a laundry queue.
+- **handle** — what registration matches on. Blank = cannot register yet.
+- **note** — free text for humans (exchange, leader, open questions). Never stored.
+  Leaders are configured by `LEADER_USERNAMES` in `.env`, so a leadership change
+  means editing both, by design: the file is data, `.env` is config.
+
+Real file is gitignored (resident details); `roster/master.example.txt` is the
+committed fake sample.
+
+## 2. `bot/roster_sync.py` loads it
+
+```
+python -m bot.roster_sync            # plan, writes nothing
+python -m bot.roster_sync --apply    # make the db match the file
+python -m bot.roster_sync --show     # print the roster as stored
+```
+
+Full reconciliation against the roster table: adds new handles, updates changed
+names/rooms, **removes handles no longer in the file**, one transaction. Reuses
+`db.roster_apply(removals, upserts)` (removals first), so a room changing hands is
+never left with both handles whitelisted.
+
+Refusals, both of which would otherwise open registration to everyone:
+- a file with **any** malformed line writes nothing at all;
+- a file listing **nobody** is rejected rather than wiping the roster.
+
+Duplicate room, duplicate handle, or duplicate display name are all errors.
+
+## 3. Removed
+
+`bot/roster_import.py`, `bot/roster_add.py`, `bot/roster_fix.py`,
+`tests/test_roster.py`, `tests/test_roster_fix.py`, `roster/corrections.example.txt`,
+the `openpyxl` dependency, and `deploy/push.sh --with-db` (it uploaded the Mac's
+`noctua.db` over the server's live one; the database is server-side state and the
+rsync already excludes it). Db-level coverage moved into `tests/test_roster_sync.py`.
