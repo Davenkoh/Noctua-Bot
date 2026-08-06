@@ -43,7 +43,7 @@ RESET_ASK_TEXT = (
     'Residents keep their registrations; the "last used" history stays.'
 )
 RESET_DONE_TEXT = "✅ All machines reset. Everything shows 🟢 free."
-ADMINS_ONLY = "🔒 Admin only."
+ADMINS_ONLY = texts.ADMIN_ONLY
 
 
 # --------------------------------------------------------------------------

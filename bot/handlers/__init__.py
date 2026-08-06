@@ -17,7 +17,7 @@ from telegram.ext import (
 )
 
 from .. import keyboards
-from . import broadcast, help as help_module, laundry, registration, status
+from . import broadcast, help as help_module, laundry, poll, registration, status
 
 __all__ = ["register_all"]
 
@@ -30,6 +30,16 @@ def register_all(application: Application) -> None:
     # Conversations own /start and /broadcast (plus their menu buttons).
     application.add_handler(registration.onboarding_handler())
     application.add_handler(broadcast.broadcast_handler())
+    application.add_handler(poll.poll_handler())
+
+    # Poll cards live in every resident's DM long after the conversation that
+    # created them ended, so their buttons are stateless handlers, not states.
+    application.add_handler(
+        CallbackQueryHandler(poll.cb_answer, pattern=keyboards.PAT_POLL_ANSWER)
+    )
+    application.add_handler(
+        CallbackQueryHandler(poll.cb_refresh, pattern=keyboards.PAT_POLL_REFRESH)
+    )
 
     # Profile is a read-only card; corrections go through a dorm leader.
     application.add_handler(CommandHandler("profile", registration.profile))

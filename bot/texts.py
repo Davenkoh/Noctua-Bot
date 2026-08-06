@@ -18,6 +18,12 @@ from . import config, util
 # The rule is written from both sides: the card tells the person waiting for a
 # machine, the nudge tells the person whose load is in it. Same number, so it
 # lives here rather than being typed into each message.
+# Refusal shown for the two admin-only actions, resetting the machines and
+# /resetme. Both wipe state, so they answer with the same words wherever the
+# refusal happens: a slash command, a button tap, or a confirm on a keyboard
+# that was sent before the tier changed.
+ADMIN_ONLY = "🔒 Admin only."
+
 COLLECT_GRACE_MIN = 15
 
 COLLECT_RULE_WAITING = (
@@ -37,6 +43,7 @@ BTN_LAUNDRY = "🧺 Laundry Menu"
 BTN_STATUS = "📊 Machine Status"
 BTN_NUDGE = "🔔 Nudge last user"
 BTN_ANNOUNCE = "📢 Announce"
+BTN_POLL = "📋 Poll"
 
 GREETING = "🦉 Hi Owlet, <b>{name}</b>!"
 
@@ -55,6 +62,11 @@ LEADER_BLOCK = (
     "3. Tap ✅ <b>Send</b> and it reaches every resident, headed "
     "“📢 Noctua Announcement” rather than your name.",
     "Nothing leaves this chat until you tap Send.",
+    "",
+    f"<b>📋 Polls</b> — tap “{BTN_POLL}” (or /poll) to ask the house who's in. "
+    "Everyone gets ✅ I'm in / ❌ Can't, and they all see the same list of "
+    "names, so people can tell who else is coming. You also get a private "
+    "summary showing who hasn't answered yet.",
 )
 
 
@@ -87,6 +99,10 @@ def overview(row, *, is_leader: bool = False, greeting: str | None = None) -> st
         "<b>📢 Announcements</b>",
         "1. Any official Noctua announcement is sent through here, so keep "
         "this chat unmuted.",
+        "2. Sometimes you'll get a 📋 poll asking who's in for something. Tap "
+        "✅ I'm in or ❌ Can't, and you'll see everyone else's answers on the "
+        "same card. Tap 🔄 Refresh for the latest, and you can change your "
+        "answer any time.",
     ]
     if is_leader:
         lines += ["", *LEADER_BLOCK]

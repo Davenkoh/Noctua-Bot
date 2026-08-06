@@ -536,3 +536,73 @@ Duplicate room, duplicate handle, or duplicate display name are all errors.
 the `openpyxl` dependency, and `deploy/push.sh --with-db` (it uploaded the Mac's
 `noctua.db` over the server's live one; the database is server-side state and the
 rsync already excludes it). Db-level coverage moved into `tests/test_roster_sync.py`.
+
+# v1.4 changes (2026-08-06) — "count me in" polls
+
+Leaders can ask the house who's in, and everyone sees the same list of names.
+
+Not Telegram's native poll. A native poll tallies per message, and each
+resident's DM is a different message, so 120 DMs would be 120 unrelated polls
+with no combined result. The bot owns the tally instead.
+
+## 1. Schema
+
+```sql
+polls (id, question, created_by, created_at, closed_at)
+poll_recipients (poll_id, user_id, chat_id, message_id, answer, answered_at,
+                 PRIMARY KEY (poll_id, user_id))
+```
+
+One `poll_recipients` row per delivered card. `answer` is NULL until they
+choose, which is what makes "who hasn't replied" a query rather than a guess.
+
+## 2. Flow
+
+`/poll` or the 📋 Poll button (leader tier, same as `/announce`) → type the
+question → confirm → fan out to every registered resident, one card each.
+
+Resident card, names only and deliberately never rooms:
+
+```
+📋 <question>
+
+✅ In (2):
+Jeshua, Daven
+
+❌ Can't (0):
+nobody yet
+
+[✅ I'm in] [❌ Can't]
+[🔄 Refresh]
+```
+
+The creator additionally gets a summary card carrying the same tally plus
+**who has not answered, with rooms**. Rooms appear there and nowhere else,
+because that message only ever goes to the leader who made the poll.
+
+## 3. Refresh, not live sync
+
+Keeping N cards current would mean N `editMessageText` calls per tap, which
+the rate limit will not carry at 120 residents. So a tap re-renders only the
+tapper's own card; everyone else pulls with 🔄 Refresh. `poll_recipients`
+stores `chat_id`/`message_id` so any card can be re-rendered on demand.
+
+Refresh distinguishes the two message kinds by `message_id`, not by who
+tapped: the creator normally holds both a card and the summary.
+
+## 4. Rules
+
+- `set_poll_answer` returns False when the user is not a recipient, so a
+  forwarded card cannot be used to vote by someone the poll never reached.
+- Re-tapping overwrites, so changing your mind moves you rather than
+  double-counting. The button shows which side you are currently on.
+- `POLL_TEST_HANDLES` in `.env` narrows the audience to a few handles for a
+  dry run. Empty (the normal state) means every registered resident.
+- Name lists are truncated at 60 with "and N more" so a full house cannot
+  push a card past Telegram's 4096-character limit.
+
+## 5. util.esc now escapes with quote=False
+
+Escaped text only ever lands in a message body, never an HTML attribute (the
+one `href` we build takes an int user id). With the default `quote=True` a
+leader's "who's in?" came back as "who&#x27;s in?".

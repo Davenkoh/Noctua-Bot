@@ -16,6 +16,7 @@ The persistent menu has three rows:
   - **▶️ Start a machine** — pick Washer 1/2 or Dryer 1/2, then tap a duration (30 min for washers; 30/45/60 min for dryers). The bot times the cycle and DMs the resident when it's done, and the machine frees itself. Paid twice? Tap a duration again to add the time. Out early? **✅ Collecting now** frees the machine straight away.
   - **📊 Machine status** — all four machines at a glance, so nobody needs to walk down just to check. Free machines also show who used them last and when. (`/status` still works as a shortcut.)
   - **🔔 Nudge last user** — lists every free machine that may still hold someone's load, one tap to nudge its owner (throttled to once every few minutes per machine).
+- **📋 Poll** (`/poll`, dorm leaders only) asks everyone who's in. The leader types one question, and every registered resident gets a card with **✅ I'm in** and **❌ Can't**. All the cards show the same running list of **names** (never rooms), so residents can see who else is coming. Because each resident holds their own copy of the card, a tap re-renders only the tapper's; everyone else pulls the latest with **🔄 Refresh**. The leader who created the poll also gets a summary card that additionally lists, with rooms, whoever hasn't answered yet. Set `POLL_TEST_HANDLES` in `.env` to dry-run a poll at a couple of people before sending it to the whole dorm.
 - **📢 Announce** (dorm leaders only, see [Configuration](#configuration)) opens a draft composer: send as many messages as you like — text, photos, videos, files — and keep editing them in the chat right up until you hit Send. **👀 Preview** shows the draft as residents will see it, **↩️ Undo last** drops the most recent message, **❌ Cancel** drops the whole draft. Sending delivers a header followed by every draft message, in order, to each registered resident, then reports how many were reached and how many were unreachable.
 - Registration (`/start`) normally takes about 20 seconds: name, then room number. If a dorm leader has imported a [resident whitelist](#resident-whitelist-roster), matching residents just confirm their prefilled name and room instead. Everything else is buttons, so residents never have to type a machine name or timer by hand.
 
@@ -47,6 +48,7 @@ Then open `.env` in any text editor and fill in:
 
 - `BOT_TOKEN` — the token you copied from @BotFather above.
 - `LEADER_USERNAMES` — comma-separated Telegram usernames (no `@`) allowed to send broadcasts, e.g. `LEADER_USERNAMES=alice,bob`.
+- `ADMIN_USERNAMES` — the smaller second tier, allowed to reset the machines and use `/resetme`. Admins count as leaders automatically, so don't list them twice.
 
 ## Run
 
@@ -71,7 +73,15 @@ or start it inside a `screen`/`tmux` session so it keeps going after you log out
 
 Everything below is a plain file — edit it and restart the bot (`Ctrl+C` then `python -m bot.main` again) to apply changes.
 
-- **Leaders** — `LEADER_USERNAMES` in `.env` (comma-separated Telegram usernames, no `@`).
+- **Leaders and admins** — `LEADER_USERNAMES` and `ADMIN_USERNAMES` in `.env` (comma-separated Telegram usernames, no `@`). Two tiers:
+
+  | | Leader | Admin |
+  |---|---|---|
+  | `/announce` to everyone | ✅ | ✅ |
+  | `🔄 Reset machines` / `/resetmachines` | ❌ | ✅ |
+  | `/resetme`, wipe your own registration | ❌ | ✅ |
+
+  Every admin is a leader automatically. The reset button is only rendered for admins, and each of its three entry points re-checks the tier, so a keyboard sent before a change can't be used as a back door. `/resetme` is in no command menu at all, admins included.
 - **Rooms** — floors, room numbers, and suite units are constants near the top of `bot/rooms.py` (`FLOOR_ROOMS`, `SUITE_ROOMS`). Add a floor or mark a room as a suite by editing those.
 - **Machines & timings** — the machine list (id, label, emoji, cycle durations) and the nudge throttle (`PING_COOLDOWN_MIN`) live in `bot/config.py`.
 - **Timezone** — defaults to `Asia/Singapore` (used for all displayed times); override with `TIMEZONE=` in `.env` using any IANA timezone name.
@@ -112,7 +122,7 @@ A few rules worth knowing:
 - **An empty or never-synced roster means open registration**, so nothing changes until the first sync.
 - Residents who **registered before a roster was synced keep their access**; they're not retroactively removed just because they're missing from a later version of the file.
 - After a sync, a new resident's `/start` skips the name and room questions entirely: the file is the source of truth, so they land straight on the menu.
-- **Syncing does not un-register anyone who already tapped `/start`.** Registration copies the name and room across once, and residents keep their access afterwards, by design. The plan prints a warning whenever that gap applies, and `/resetme` (leaders) or a fresh registration is what actually moves someone's stored details.
+- **Syncing does not un-register anyone who already tapped `/start`.** Registration copies the name and room across once, and residents keep their access afterwards, by design. The plan prints a warning whenever that gap applies, and `/resetme` (admins) or a fresh registration is what actually moves someone's stored details.
 
 ## Data
 

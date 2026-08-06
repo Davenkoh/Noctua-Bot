@@ -58,6 +58,11 @@ LEADER_USERNAMES: set[str] = (
 )
 # Who residents should contact about wrong name/room details.
 CONTACT_HANDLE: str = os.environ.get("CONTACT_HANDLE", "daven_koh").strip().lstrip("@")
+# Dry-run audience for /poll: when set, a poll reaches only these handles
+# instead of every registered resident. Leave empty in normal operation.
+POLL_TEST_HANDLES: set[str] = _parse_leader_usernames(
+    os.environ.get("POLL_TEST_HANDLES", "")
+)
 TIMEZONE: ZoneInfo = ZoneInfo(os.environ.get("TIMEZONE", "Asia/Singapore"))
 DB_PATH: str = os.environ.get("DB_PATH", str(PROJECT_ROOT / "noctua.db"))
 PING_COOLDOWN_MIN: int = 3      # min minutes between "nudge last user" nudges per machine
