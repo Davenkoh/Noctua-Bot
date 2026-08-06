@@ -41,6 +41,25 @@ CREATE TABLE IF NOT EXISTS roster (
   name TEXT NOT NULL,
   room TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS polls (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  question TEXT NOT NULL,
+  created_by INTEGER NOT NULL REFERENCES users(user_id),
+  created_at TEXT NOT NULL,
+  closed_at TEXT
+);
+-- One row per resident the poll was delivered to, so a tap can re-render
+-- that person's own card. answer is NULL until they choose.
+CREATE TABLE IF NOT EXISTS poll_recipients (
+  poll_id INTEGER NOT NULL REFERENCES polls(id),
+  user_id INTEGER NOT NULL REFERENCES users(user_id),
+  chat_id INTEGER NOT NULL,
+  message_id INTEGER,
+  answer TEXT,
+  answered_at TEXT,
+  PRIMARY KEY (poll_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_poll_recipients_poll ON poll_recipients(poll_id);
 """
 
 # Every session read is joined with its owner so handlers can render
@@ -445,3 +464,101 @@ def release_nudge(session_id: int, previous: str | None) -> None:
         conn.execute(
             "UPDATE sessions SET last_ping_at = ? WHERE id = ?", (previous, session_id)
         )
+
+
+# --------------------------------------------------------------------------
+# polls ("count me in")
+# --------------------------------------------------------------------------
+
+IN, OUT = "in", "out"
+
+
+def create_poll(question: str, created_by: int) -> int:
+    with _tx() as conn:
+        cursor = conn.execute(
+            "INSERT INTO polls (question, created_by, created_at) VALUES (?, ?, ?)",
+            (question, created_by, util.to_iso(util.now_utc())),
+        )
+        return int(cursor.lastrowid)
+
+
+def get_poll(poll_id: int) -> sqlite3.Row | None:
+    return connection().execute("SELECT * FROM polls WHERE id = ?", (poll_id,)).fetchone()
+
+
+def latest_poll() -> sqlite3.Row | None:
+    return connection().execute(
+        "SELECT * FROM polls ORDER BY id DESC LIMIT 1"
+    ).fetchone()
+
+
+def add_poll_recipient(poll_id: int, user_id: int, chat_id: int, message_id: int) -> None:
+    """Record where one resident's copy of the card lives, so taps can edit it."""
+    with _tx() as conn:
+        conn.execute(
+            "INSERT INTO poll_recipients (poll_id, user_id, chat_id, message_id) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT(poll_id, user_id) DO UPDATE SET "
+            "chat_id = excluded.chat_id, message_id = excluded.message_id",
+            (poll_id, user_id, chat_id, message_id),
+        )
+
+
+def set_poll_answer(poll_id: int, user_id: int, answer: str | None) -> bool:
+    """Record one person's answer. False when they were never sent this poll.
+
+    Only ever touches the caller's own row, and re-tapping overwrites rather
+    than appending, so a resident can change their mind any number of times.
+    """
+    with _tx() as conn:
+        cursor = conn.execute(
+            "UPDATE poll_recipients SET answer = ?, answered_at = ? "
+            "WHERE poll_id = ? AND user_id = ?",
+            (answer, util.to_iso(util.now_utc()) if answer else None, poll_id, user_id),
+        )
+        return cursor.rowcount > 0
+
+
+def poll_answers(poll_id: int) -> dict[str, list[str]]:
+    """``{"in": [names...], "out": [names...]}`` in the order people answered."""
+    rows = connection().execute(
+        "SELECT p.answer AS answer, u.name AS name FROM poll_recipients p "
+        "JOIN users u ON u.user_id = p.user_id "
+        "WHERE p.poll_id = ? AND p.answer IS NOT NULL "
+        "ORDER BY p.answered_at, u.name",
+        (poll_id,),
+    ).fetchall()
+    tally: dict[str, list[str]] = {IN: [], OUT: []}
+    for row in rows:
+        tally.setdefault(row["answer"], []).append(row["name"])
+    return tally
+
+
+def poll_no_reply(poll_id: int) -> list[sqlite3.Row]:
+    """Everyone the poll reached who has not answered. Leader's chase list."""
+    return connection().execute(
+        "SELECT u.name AS name, u.room AS room, u.username AS username "
+        "FROM poll_recipients p JOIN users u ON u.user_id = p.user_id "
+        "WHERE p.poll_id = ? AND p.answer IS NULL ORDER BY u.room",
+        (poll_id,),
+    ).fetchall()
+
+
+def poll_cards(poll_id: int, *, exclude_user: int | None = None) -> list[sqlite3.Row]:
+    """Every delivered copy of a poll, for a sweep re-render."""
+    sql = (
+        "SELECT user_id, chat_id, message_id FROM poll_recipients "
+        "WHERE poll_id = ? AND message_id IS NOT NULL"
+    )
+    params: list[object] = [poll_id]
+    if exclude_user is not None:
+        sql += " AND user_id != ?"
+        params.append(exclude_user)
+    return connection().execute(sql, params).fetchall()
+
+
+def poll_recipient(poll_id: int, user_id: int) -> sqlite3.Row | None:
+    """One person's row for a poll: where their card is, and their answer."""
+    return connection().execute(
+        "SELECT * FROM poll_recipients WHERE poll_id = ? AND user_id = ?",
+        (poll_id, user_id),
+    ).fetchone()

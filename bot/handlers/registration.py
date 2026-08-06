@@ -311,10 +311,17 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 
 async def reset_me(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Leader-only ``/resetme``: wipe own registration to re-test onboarding."""
+    """Admin-only ``/resetme``: wipe own registration to re-test onboarding.
+
+    Admin rather than leader, and never in any command menu. It only ever
+    touches the caller's own row, so the blast radius is one person who can
+    re-register straight away, but it also cancels their running timers. A
+    resident whose name or room is wrong is meant to reach CONTACT_HANDLE,
+    not discover a command that silently drops their laundry.
+    """
     user = update.effective_user
-    if not config.is_leader(user.username):
-        await update.effective_message.reply_text("🔒 Leaders only.")
+    if not config.is_admin(user.username):
+        await update.effective_message.reply_text(texts.ADMIN_ONLY)
         return
 
     active_ids = db.purge_user(user.id)

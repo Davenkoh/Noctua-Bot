@@ -87,8 +87,14 @@ def finished_line(row) -> str:
 
 
 def esc(value: str | None) -> str:
-    """HTML-escape anything a resident typed before embedding it."""
-    return html.escape(value or "")
+    """HTML-escape anything a resident typed before embedding it.
+
+    ``quote=False``: escaped text only ever lands in a message body, never in
+    an HTML attribute (the one ``href`` we build takes an int user id). With
+    the default, an apostrophe becomes ``&#x27;`` and a leader's "who's in?"
+    reads back at them as "who&#x27;s in?".
+    """
+    return html.escape(value or "", quote=False)
 
 
 def mention_html(user_id: int, username: str | None, name: str) -> str:

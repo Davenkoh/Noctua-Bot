@@ -30,6 +30,10 @@ Fields are ``:``-separated ASCII, always well under Telegram's 64-byte limit.
                              "Fix name" (only the name is re-asked)
 ``bc:send`` / ``bc:cancel``  announcement composer: fan out / abort
 ``bc:prev`` / ``bc:undo``    announcement composer: preview / drop last message
+``pl:in:<pid>``              count me in on poll <pid>
+``pl:out:<pid>``             can't make it on poll <pid>
+``pl:re:<pid>``              refresh my copy of poll <pid>'s card
+``pl:send`` / ``pl:cancel``  poll composer: fan out / abort
 ===========================  ==================================================
 
 Every "No"/"Cancel" button on a machine dialog reuses ``m:<mid>``, so backing
@@ -49,6 +53,7 @@ MENU_LAUNDRY = "🧺 Laundry menu"
 MENU_PROFILE = "👤 Profile"
 MENU_HELP = "❓ Help"
 MENU_ANNOUNCE = "📢 Announce"
+MENU_POLL = "📋 Poll"
 
 # v1 labels: reply keyboards live in the client until the resident triggers a
 # new one, so the old captions must keep routing somewhere sensible.
@@ -85,6 +90,7 @@ RX_STATUS = _exact(LEGACY_STATUS)
 RX_PROFILE = _exact(MENU_PROFILE, LEGACY_PROFILE)
 RX_HELP = _exact(MENU_HELP)
 RX_ANNOUNCE = _exact(MENU_ANNOUNCE, LEGACY_BROADCAST)
+RX_POLL = _exact(MENU_POLL)
 
 # --- callback patterns (used verbatim by CallbackQueryHandler) ------------
 PAT_HUB = r"^hub$"
@@ -106,6 +112,10 @@ PAT_BC_SEND = r"^bc:send$"
 PAT_BC_PREVIEW = r"^bc:prev$"
 PAT_BC_UNDO = r"^bc:undo$"
 PAT_BC_CANCEL = r"^bc:cancel$"
+PAT_POLL_ANSWER = r"^pl:(in|out):(\d+)$"
+PAT_POLL_REFRESH = r"^pl:re:(\d+)$"
+PAT_POLL_SEND = r"^pl:send$"
+PAT_POLL_CANCEL = r"^pl:cancel$"
 
 # Every machine dialog is reached from the machine list, so "back" always means
 # "the laundry menu" — spelling that out beats a bare "⬅️ Back".
@@ -115,10 +125,14 @@ _BTN_STATUS = InlineKeyboardButton(HUB_STATUS, callback_data="st")
 
 
 def main_menu(is_leader: bool = False) -> ReplyKeyboardMarkup:
-    """Persistent menu; the announce row exists only for dorm leaders."""
+    """Persistent menu; the leaders' row exists only for dorm leaders.
+
+    Announce and Poll share a row: both are "reach every resident" tools, and
+    keeping them together stops the residents' three rows from growing.
+    """
     rows = [[MENU_LAUNDRY], [MENU_PROFILE, MENU_HELP]]
     if is_leader:
-        rows.append([MENU_ANNOUNCE])
+        rows.append([MENU_ANNOUNCE, MENU_POLL])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
@@ -314,5 +328,40 @@ def composer_keyboard(recipients: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("↩️ Undo last", callback_data="bc:undo"),
             ],
             [InlineKeyboardButton("❌ Cancel", callback_data="bc:cancel")],
+        ]
+    )
+
+
+def poll_card_keyboard(poll_id: int, answer: str | None = None) -> InlineKeyboardMarkup:
+    """Buttons under a resident's copy of a "count me in" card.
+
+    The tapper's current answer is ticked so their own choice is obvious even
+    though the card lists everyone. Tapping the other option switches sides;
+    the same button never has to mean "undo".
+    """
+    yes = "✅ I'm in" if answer != "in" else "✅ I'm in  ·  your answer"
+    no = "❌ Can't" if answer != "out" else "❌ Can't  ·  your answer"
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(yes, callback_data=f"pl:in:{poll_id}"),
+                InlineKeyboardButton(no, callback_data=f"pl:out:{poll_id}"),
+            ],
+            [InlineKeyboardButton("🔄 Refresh", callback_data=f"pl:re:{poll_id}")],
+        ]
+    )
+
+
+def poll_composer_keyboard(recipients: int) -> InlineKeyboardMarkup:
+    """Buttons under the poll composer's draft."""
+    plural = "" if recipients == 1 else "s"
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    f"✅ Send to {recipients} resident{plural}", callback_data="pl:send"
+                )
+            ],
+            [InlineKeyboardButton("❌ Cancel", callback_data="pl:cancel")],
         ]
     )
