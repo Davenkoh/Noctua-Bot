@@ -365,3 +365,14 @@ def poll_composer_keyboard(recipients: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton("❌ Cancel", callback_data="pl:cancel")],
         ]
     )
+
+
+def poll_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Just ❌ Cancel, for the "send me the question" prompt.
+
+    The prompt has no other action yet — the next step is the leader typing —
+    so a lone Cancel spares them remembering /cancel.
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Cancel", callback_data="pl:cancel")]]
+    )

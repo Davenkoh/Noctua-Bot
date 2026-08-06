@@ -143,6 +143,30 @@ def test_long_lists_are_truncated_not_dropped() -> int:
     return 3
 
 
+def test_every_composer_step_offers_a_cancel_button() -> int:
+    import re
+
+    from bot import keyboards
+
+    # The prompt asks for typed input, so its only action is Cancel.
+    prompt = keyboards.poll_cancel_keyboard().inline_keyboard
+    flat = [b for row in prompt for b in row]
+    assert len(flat) == 1 and flat[0].callback_data == "pl:cancel", flat
+    assert re.match(keyboards.PAT_POLL_CANCEL, flat[0].callback_data)
+
+    # The confirm step offers both, and the send button names the audience.
+    confirm = keyboards.poll_composer_keyboard(7).inline_keyboard
+    data = [b.callback_data for row in confirm for b in row]
+    assert data == ["pl:send", "pl:cancel"], data
+    assert "7 residents" in confirm[0][0].text, confirm[0][0].text
+
+    # Nothing in the composer should still be telling people to type /cancel.
+    from bot.handlers import poll as ph
+
+    assert "/cancel" not in ph.INTRO, "the prompt has a button now"
+    return 5
+
+
 def main() -> None:
     tests = (
         test_answers_tally_by_side_and_track_who_has_not_replied,
@@ -153,6 +177,7 @@ def main() -> None:
         test_question_is_escaped_so_a_leader_cannot_break_the_card,
         test_a_missing_poll_renders_as_none_rather_than_crashing,
         test_long_lists_are_truncated_not_dropped,
+        test_every_composer_step_offers_a_cancel_button,
     )
     total_cases = 0
     try:
