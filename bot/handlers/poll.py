@@ -36,6 +36,7 @@ ASKING = 30
 
 QUESTION_KEY = "poll_question"
 CHAT_KEY = "poll_chat"
+INTRO_KEY = "poll_intro"    # message id of the "send me the question" prompt
 
 SEND_DELAY_S = 0.05  # gentle on Telegram's per-bot rate limit
 QUESTION_LIMIT = 300
@@ -45,7 +46,7 @@ INTRO = (
     "Send me the question, for example:\n"
     "<i>Block cleanup this Saturday 10am, who's in?</i>\n\n"
     "Everyone gets a card with <b>✅ I'm in</b> and <b>❌ Can't</b>, and they "
-    "all see the same list of names. /cancel to drop it."
+    "all see the same list of names."
 )
 TOO_LONG = f"That's over {QUESTION_LIMIT} characters. Send something shorter."
 NO_RECIPIENTS = "Nobody has registered yet, so there is nobody to poll."
@@ -149,8 +150,27 @@ async def poll_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     context.user_data[CHAT_KEY] = update.effective_chat.id
     context.user_data.pop(QUESTION_KEY, None)
-    await update.effective_message.reply_text(INTRO)
+    message = await update.effective_message.reply_text(
+        INTRO, reply_markup=keyboards.poll_cancel_keyboard()
+    )
+    context.user_data[INTRO_KEY] = message.message_id
     return ASKING
+
+
+async def _retire_intro(context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Drop the prompt's Cancel button once the flow has moved on.
+
+    Its handler only exists inside the conversation, so a button left behind
+    afterwards would spin and time out rather than doing anything.
+    """
+    chat_id = context.user_data.get(CHAT_KEY)
+    message_id = context.user_data.pop(INTRO_KEY, None)
+    if not chat_id or not message_id:
+        return
+    try:
+        await context.bot.edit_message_reply_markup(chat_id, message_id, reply_markup=None)
+    except TelegramError as exc:
+        logger.debug("Poll prompt %s buttons not cleared: %s", message_id, exc)
 
 
 async def collect_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -165,6 +185,7 @@ async def collect_question(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return ConversationHandler.END
 
     context.user_data[QUESTION_KEY] = question
+    await _retire_intro(context)
     await update.effective_message.reply_text(
         f"📋 <b>{util.esc(question)}</b>\n\nSend this to everyone?",
         reply_markup=keyboards.poll_composer_keyboard(len(recipients)),
@@ -180,6 +201,7 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return ASKING
 
     await query.answer()
+    await _retire_intro(context)
     user = update.effective_user
     recipients = _audience()
     poll_id = db.create_poll(question, user.id)
@@ -225,6 +247,12 @@ async def abort(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
     context.user_data.pop(QUESTION_KEY, None)
+    # Cancel can be tapped on the prompt or on the confirm card. Whichever it
+    # was becomes the "cancelled" notice; the other loses its buttons.
+    if context.user_data.get(INTRO_KEY) == query.message.message_id:
+        context.user_data.pop(INTRO_KEY, None)
+    else:
+        await _retire_intro(context)
     try:
         await query.edit_message_text("❌ Poll cancelled. Nothing was sent.", reply_markup=None)
     except TelegramError as exc:
@@ -234,6 +262,7 @@ async def abort(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.pop(QUESTION_KEY, None)
+    await _retire_intro(context)
     await update.effective_message.reply_text("❌ Poll cancelled. Nothing was sent.")
     return ConversationHandler.END
 
