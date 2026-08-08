@@ -82,3 +82,4 @@ def is_admin(username: str | None) -> bool:
     """Can also reset every machine back to free."""
     handle = _normalize(username)
     return bool(handle) and handle in ADMIN_USERNAMES
+

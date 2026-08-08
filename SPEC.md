@@ -606,3 +606,67 @@ tapped: the creator normally holds both a card and the summary.
 Escaped text only ever lands in a message body, never an HTML attribute (the
 one `href` we build takes an int user id). With the default `quote=True` a
 leader's "who's in?" came back as "who&#x27;s in?".
+
+# v1.5 changes (2026-08-08) — the status board becomes the laundry home
+
+Two screens answered one question between them. A resident opening laundry
+wants "is anything free" and "can I start mine", and the menu answered only
+the second, so seeing the first cost an extra tap and a second screen to
+maintain. They are now one screen.
+
+## 1. The home
+
+```
+🧺 Noctua Laundry
+Tap your machine once your stuff is in and paid.
+
+🫧 Washer 1: 🔴 In use by Lydia (#08-01C) @LydiaChien
+    ~9 min left · est. done 4:26 PM
+
+🫧 Washer 2: 🟢 Free
+    Last: Kai Jin (#07-25) @KaiJin_11 · finished 3:40 PM (36 min ago)
+...
+Last updated 4:17 PM
+
+[🫧 Washer 1 🔴]
+[🫧 Washer 2 🟢] [🔔 Nudge Kai Jin]
+[💨 Dryer 1 🟢] [🔔 Nudge Calvin]
+[🔄 Refresh]
+[🔄 Reset all machines]        ← admins only
+```
+
+The instruction sits under the title, not the foot: it explains the buttons,
+so it has to be read before them. The footer is just `Last updated {clock}`;
+the old "times are estimates" note is gone.
+
+Nudge sits beside its machine and names the person, not the machine, since
+the row already says which machine. A **running** machine has no nudge
+button: its owner's load is not finished, so there is nothing to nudge about.
+
+## 2. What went
+
+`render_machine_list`, `render_status`, `machine_list_keyboard`,
+`status_keyboard`, `laundry_hub_keyboard`, `HUB_START`, `HUB_STATUS`,
+`_BTN_STATUS`, `_suffix`, `LIST_TEXT`, and `machine_view_keyboard(status=)`.
+
+That last one mattered: `started_keyboard` passed `status=True`, so after the
+merge the cycle-confirmation screen carried both 📊 Machine status and
+⬅️ Laundry menu, which now render the same thing.
+
+`/status` and the `st` callback survive as aliases of the home. Older
+messages in residents' chats still carry that button and a dead end there
+would be worse than a redirect. Same for `menu` and `hub`.
+
+`render_nudge_picker` / `/ping` / `pingpick` stay: the picker is still how
+you nudge without opening the home.
+
+## 3. Rollout
+
+Shipped behind `LAUNDRY_PREVIEW_HANDLES`, a canary env var that gave the new
+home to listed handles and the old menu to everyone else, then cleared. The
+variable and `config.is_laundry_preview` are removed; the pattern is worth
+reusing (see `POLL_TEST_HANDLES`) rather than the specific flag.
+
+Residents needed no action. Inline keyboards are rebuilt per message, so the
+next tap after the deploy showed the new screen. Only the *reply* keyboard is
+cached client-side, which is why the 📋 Poll button in v1.4 needed a /start.
