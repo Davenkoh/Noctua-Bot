@@ -19,10 +19,9 @@ from .. import config, db, jobs, keyboards, texts, util
 
 logger = logging.getLogger(__name__)
 
-LIST_TEXT = (
-    "🧺 <b>Laundry menu</b>\n"
-    "Tap your machine once your stuff is in and paid."
-)
+INDENT = "    "
+HOME_TITLE = "🧺 <b>Noctua Laundry</b>"
+HOME_HINT = "Tap your machine once your stuff is in and paid."
 PICK_TEXT = (
     "🔔 <b>Nudge last user</b>\nThese machines are free but may still hold "
     "someone's load. Tap one to nudge them:"
@@ -51,26 +50,53 @@ ADMINS_ONLY = texts.ADMIN_ONLY
 # --------------------------------------------------------------------------
 
 
-def _suffix(machine: config.Machine) -> str:
-    """Live state for a machine-list button — free or running, nothing else."""
-    active = db.get_active(machine.id)
-    if active is not None:
-        return f"· 🔴 {util.fmt_remaining(util.parse_iso(active['ends_at']))} left"
-    return "· 🟢 free"
+def render_home(is_admin: bool = False) -> tuple[str, InlineKeyboardMarkup]:
+    """The laundry home: live state for all four machines, and the actions.
+
+    This is the old status board and the old machine menu merged. Residents
+    open this to answer two questions at once, "is anything free" and "can I
+    start mine", and splitting them across two screens made the second tap
+    pure ceremony.
+    """
+    # The instruction sits under the title, not at the foot: it tells you what
+    # to do with the buttons, so it has to be read before them, not after.
+    lines = [HOME_TITLE, HOME_HINT, ""]
+    rows: list[tuple[str, str, tuple[str, str] | None]] = []
+
+    for machine in config.MACHINES.values():
+        head = f"{machine.emoji} {machine.label}"
+        active = db.get_active(machine.id)
+        if active is not None:
+            ends_at = util.parse_iso(active["ends_at"])
+            lines.append(f"{head}: 🔴 In use by {util.who_html(active)}")
+            lines.append(
+                f"{INDENT}{util.fmt_remaining(ends_at)} left · est. done {util.fmt_clock(ends_at)}"
+            )
+            lines.append("")
+            # Running, so its owner's load is not finished: nothing to nudge.
+            rows.append((machine.id, f"{head} 🔴", None))
+            continue
+
+        latest = db.get_latest(machine.id)
+        if latest is None:
+            lines.append(f"{head}: 🟢 Free · not used yet")
+            lines.append("")
+            rows.append((machine.id, f"{head} 🟢", None))
+            continue
+
+        lines.append(f"{head}: 🟢 Free")
+        lines.append(f"{INDENT}Last: {util.who_html(latest)} · {util.finished_line(latest)}")
+        lines.append("")
+        nudge = (f"🔔 Nudge {util.shorten(latest['name'], 14)}", machine.id)
+        rows.append((machine.id, f"{head} 🟢", nudge))
+
+    lines.append(f"<i>Last updated {util.fmt_clock(util.now_utc())}</i>")
+    return "\n".join(lines), keyboards.laundry_home_keyboard(rows, is_admin)
 
 
-def render_machine_list(is_admin: bool = False) -> tuple[str, InlineKeyboardMarkup]:
-    """The laundry home screen: machines first, then status and nudge."""
-    labels = {
-        machine.id: f"{machine.emoji} {machine.label} {_suffix(machine)}"
-        for machine in config.MACHINES.values()
-    }
-    return LIST_TEXT, keyboards.machine_list_keyboard(labels, is_admin)
-
-
-# "Hub" is now the machine list itself; both callbacks land in the same place
-# so keyboards sent before this change keep working.
-render_hub = render_machine_list
+# "hub" and "menu" both mean the laundry home now, so keyboards sent before
+# this change keep working: an old 📊 Machine status or ⬅️ Laundry menu button
+# lands on the same screen a fresh tap would.
 
 
 def render_nudge_picker(user_id: int) -> tuple[str, InlineKeyboardMarkup]:
@@ -166,14 +192,16 @@ def _machine_from(data: str, index: int = 1) -> config.Machine | None:
 
 
 async def open_hub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """The 🧺 Laundry reply button — opens the hub as a fresh message."""
-    text, markup = render_hub(config.is_admin(update.effective_user.username))
+    """The 🧺 Laundry reply button — opens the home as a fresh message."""
+    user = update.effective_user
+    text, markup = render_home(config.is_admin(user.username))
     await update.effective_message.reply_text(text, reply_markup=markup)
 
 
 async def use_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """``/use`` — the machine picker, same as the hub's Start a machine."""
-    text, markup = render_machine_list(config.is_admin(update.effective_user.username))
+    """``/use`` — the machine picker, same screen as the laundry home."""
+    user = update.effective_user
+    text, markup = render_home(config.is_admin(user.username))
     await update.effective_message.reply_text(text, reply_markup=markup)
 
 
@@ -185,13 +213,16 @@ async def nudge_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def cb_hub(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.callback_query.answer()
-    text, markup = render_hub(config.is_admin(update.effective_user.username))
+    user = update.effective_user
+    text, markup = render_home(config.is_admin(user.username))
     await _safe_edit(update, text, markup)
 
 
 async def cb_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """``menu`` — kept because older messages still carry that callback."""
     await update.callback_query.answer()
-    text, markup = render_machine_list(config.is_admin(update.effective_user.username))
+    user = update.effective_user
+    text, markup = render_home(config.is_admin(user.username))
     await _safe_edit(update, text, markup)
 
 

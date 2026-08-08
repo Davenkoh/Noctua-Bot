@@ -71,8 +71,6 @@ LEGACY_CAPTIONS = frozenset(
 )
 
 # --- inline labels shared across keyboards --------------------------------
-HUB_START = "▶️ Start a machine"
-HUB_STATUS = "📊 Machine status"
 # "Nudge" everywhere a resident can see: "ping" survives only in callback data
 # and the /ping command, where nobody reads it.
 HUB_PING = "🔔 Nudge last user"
@@ -121,7 +119,6 @@ PAT_POLL_CANCEL = r"^pl:cancel$"
 # "the laundry menu" — spelling that out beats a bare "⬅️ Back".
 _BTN_BACK = InlineKeyboardButton(BACK_HUB, callback_data="menu")
 _BTN_HUB = InlineKeyboardButton(BACK_HUB, callback_data="hub")
-_BTN_STATUS = InlineKeyboardButton(HUB_STATUS, callback_data="st")
 
 
 def main_menu(is_leader: bool = False) -> ReplyKeyboardMarkup:
@@ -136,22 +133,6 @@ def main_menu(is_leader: bool = False) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
-def laundry_hub_keyboard(is_leader: bool = False) -> InlineKeyboardMarkup:
-    """Sections of the laundry feature — the one entry point residents see.
-
-    The reset row is a leaders-only escape hatch, so it is rendered only for
-    them (``cb_reset`` re-checks: a stale keyboard must not be a back door).
-    """
-    rows = [
-        [InlineKeyboardButton(HUB_START, callback_data="menu")],
-        [InlineKeyboardButton(HUB_STATUS, callback_data="st")],
-        [InlineKeyboardButton(HUB_PING, callback_data="pingpick")],
-    ]
-    if is_leader:
-        rows.append([InlineKeyboardButton(HUB_RESET, callback_data="reset")])
-    return InlineKeyboardMarkup(rows)
-
-
 def hub_only_keyboard() -> InlineKeyboardMarkup:
     """A lone ``⬅️ Laundry`` button for end-of-flow messages."""
     return InlineKeyboardMarkup([[_BTN_HUB]])
@@ -164,31 +145,6 @@ def reset_confirm_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("❌ No", callback_data="hub")],
         ]
     )
-
-
-def machine_list_keyboard(
-    labels: dict[str, str], is_leader: bool = False
-) -> InlineKeyboardMarkup:
-    """The laundry home: a machine per row, then the secondary actions.
-
-    Machines come first because starting a cycle is what residents open this
-    for; status and nudge sit underneath so they cost the same two taps they
-    did when they had their own menu. The reset row is leaders-only, and
-    ``cb_reset`` re-checks that (a stale keyboard must not be a back door).
-    """
-    rows = [
-        [InlineKeyboardButton(caption, callback_data=f"m:{machine_id}")]
-        for machine_id, caption in labels.items()
-    ]
-    rows.append(
-        [
-            InlineKeyboardButton(HUB_STATUS, callback_data="st"),
-            InlineKeyboardButton(HUB_PING, callback_data="pingpick"),
-        ]
-    )
-    if is_leader:
-        rows.append([InlineKeyboardButton(HUB_RESET, callback_data="reset")])
-    return InlineKeyboardMarkup(rows)
 
 
 def nudge_picker_keyboard(entries: list[tuple[str, str]]) -> InlineKeyboardMarkup:
@@ -221,7 +177,6 @@ def machine_view_keyboard(
     stop_sid: int | None = None,
     ping_name: str | None = None,
     back: bool = True,
-    status: bool = False,
 ) -> InlineKeyboardMarkup:
     rows: list[list[InlineKeyboardButton]] = []
     if durations:
@@ -238,9 +193,8 @@ def machine_view_keyboard(
                 )
             ]
         )
-    tail = [button for button, on in ((_BTN_STATUS, status), (_BTN_BACK, back)) if on]
-    if tail:
-        rows.append(tail)
+    if back:
+        rows.append([_BTN_BACK])
     return InlineKeyboardMarkup(rows)
 
 
@@ -254,7 +208,7 @@ def started_keyboard(
     into the machine view to find it.
     """
     return machine_view_keyboard(
-        machine, durations=True, extend=True, stop_sid=session_id, status=True
+        machine, durations=True, extend=True, stop_sid=session_id
     )
 
 
@@ -274,16 +228,6 @@ def stop_confirm_keyboard(machine_id: str, session_id: int) -> InlineKeyboardMar
             [InlineKeyboardButton("❌ Not yet", callback_data=f"m:{machine_id}")],
         ]
     )
-
-
-def status_keyboard(ping_machines: list[config.Machine]) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton("🔄 Refresh", callback_data="st:refresh")]]
-    for machine in ping_machines:
-        rows.append(
-            [InlineKeyboardButton(f"🔔 Nudge {machine.label}", callback_data=f"ping:{machine.id}")]
-        )
-    rows.append([_BTN_HUB])
-    return InlineKeyboardMarkup(rows)
 
 
 def suite_letters_keyboard(letters: list[str]) -> InlineKeyboardMarkup:
@@ -376,3 +320,27 @@ def poll_cancel_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("❌ Cancel", callback_data="pl:cancel")]]
     )
+
+
+def laundry_home_keyboard(
+    rows: list[tuple[str, str, tuple[str, str] | None]], is_admin: bool = False
+) -> InlineKeyboardMarkup:
+    """The merged laundry home: one row per machine, nudge beside it.
+
+    ``rows`` is ``(machine id, caption, (nudge caption, machine id) | None)``.
+    A machine that is running has nobody to nudge — its owner's load is not
+    finished — so that row is the machine button alone, full width.
+    """
+    keyboard = []
+    for machine_id, caption, nudge in rows:
+        row = [InlineKeyboardButton(caption, callback_data=f"m:{machine_id}")]
+        if nudge is not None:
+            nudge_caption, nudge_id = nudge
+            row.append(
+                InlineKeyboardButton(nudge_caption, callback_data=f"ping:{nudge_id}")
+            )
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("🔄 Refresh", callback_data="hub")])
+    if is_admin:
+        keyboard.append([InlineKeyboardButton(HUB_RESET, callback_data="reset")])
+    return InlineKeyboardMarkup(keyboard)
