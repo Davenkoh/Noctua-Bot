@@ -35,38 +35,20 @@ COLLECT_RULE_OWNER = (
     "finishes, the next user has the right to take it out."
 )
 
-# Button names as the leader wrote them in the card. They are prose here, so
-# they are title-cased rather than pulled from bot.keyboards, whose captions
-# are lower case ("🧺 Laundry menu"). Rename a button and this needs the same
-# edit.
-BTN_LAUNDRY = "🧺 Laundry Menu"
-BTN_STATUS = "📊 Machine Status"
-BTN_NUDGE = "🔔 Nudge last user"
+BTN_LAUNDRY = "🧺 Laundry menu"
 BTN_ANNOUNCE = "📢 Announce"
 BTN_POLL = "📋 Poll"
 
 GREETING = "🦉 Hi Owlet, <b>{name}</b>!"
 
-# Leaders get their own headed block rather than one more numbered line under
-# announcements. The card is what a leader skims once and half-remembers, and
-# a house leader who reads past this never uses the broadcast at all.
+# What a leader can do, not how. The buttons are two taps away and say what
+# they are; a numbered walkthrough here was read once and never again. Same
+# shape as the resident sections: a heading, then the lines under it.
 LEADER_BLOCK = (
-    "<b>🔑 You're a Noctua leader</b>",
-    "You hold a leadership position in the house, so you can send an "
-    "announcement to every resident from this chat.",
-    f"1. Tap “{BTN_ANNOUNCE}” (or /announce), then write your announcement "
-    "here. Text, photos, videos and files all work, and you can send several "
-    "messages in one go.",
-    "2. Edit or undo anything you sent, and preview the whole thing, before it "
-    "goes anywhere.",
-    "3. Tap ✅ <b>Send</b> and it reaches every resident, headed "
-    "“📢 Noctua Announcement” rather than your name.",
-    "Nothing leaves this chat until you tap Send.",
+    "<b>🔑 You're a Noctua leader, you get announcement privileges</b>",
     "",
-    f"<b>📋 Polls</b> — tap “{BTN_POLL}” (or /poll) to ask the house who's in. "
-    "Everyone gets ✅ I'm in / ❌ Can't, and they all see the same list of "
-    "names, so people can tell who else is coming. You also get a private "
-    "summary showing who hasn't answered yet.",
+    f"1. “{BTN_ANNOUNCE}” sends a message to every resident.",
+    f"2. “{BTN_POLL}” lets you poll the house.",
 )
 
 
@@ -89,37 +71,27 @@ def overview(row, *, is_leader: bool = False, greeting: str | None = None) -> st
             "<b>Your profile</b>",
             f"👤 {util.esc(row['name'])} · 🏠 {util.esc(row['room'])}",
             f"Wrong? Text {_contact()}.",
-            f"Changed your Telegram tag? Text {_contact()} or you lose access.",
-            "",
         ]
+    if lines:  # ❓ Help has no greeting, so it must not open with a blank line
+        lines.append("")
 
     lines += [
-        "This is the official Noctua bot, for announcements and laundry.",
+        "The official Noctua bot, for laundry and house announcements.",
+        "",
+        "<b>🧺 Laundry</b>",
+        f"“{BTN_LAUNDRY}” shows what's free right now. Start a machine and the "
+        "bot messages you when your load is done, or nudge whoever left their "
+        "laundry sitting in one.",
+        "",
+        # Sits with laundry rather than at the end: it is the rule that settles
+        # an argument in the laundry room, not a footnote about the bot.
+        COLLECT_RULE_WAITING,
         "",
         "<b>📢 Announcements</b>",
-        "1. Any official Noctua announcement is sent through here, so keep "
-        "this chat unmuted.",
-        "2. Sometimes you'll get a 📋 poll asking who's in for something. Tap "
-        "✅ I'm in or ❌ Can't, and you'll see everyone else's answers on the "
-        "same card. Tap 🔄 Refresh for the latest, and you can change your "
-        "answer any time.",
+        "House announcements arrive here, so keep this chat unmuted.",
     ]
     if is_leader:
         lines += ["", *LEADER_BLOCK]
 
-    lines += [
-        "",
-        "<b>🧺 Laundry Queue System</b>",
-        f"1. Tap “{BTN_LAUNDRY}” to see the laundry options.",
-        "2. When you put a load in, tap the machine you're using, then how "
-        "long the cycle is. This bot will message you when your load is done.",
-        f"3. Tap “{BTN_STATUS}” to see which machines are in use, when it was "
-        "last used, and by who.",
-        f"4. To nudge the person before you, tap “{BTN_NUDGE}” and this bot "
-        "will send them a notification.",
-        "",
-        COLLECT_RULE_WAITING,
-        "",
-        f"Anything wrong with the bot, or questions? Text {_contact()}.",
-    ]
+    lines += ["", f"Anything wrong, or questions? Text {_contact()}."]
     return "\n".join(lines)
