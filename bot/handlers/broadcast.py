@@ -79,8 +79,9 @@ async def _show_status(context: ContextTypes.DEFAULT_TYPE) -> None:
     if chat_id is None:
         return
 
-    if _draft(context):
-        text = COMPOSE_RULE
+    count = len(_draft(context))
+    if count:
+        text = f"📝 Drafted: <b>{count}</b> message(s)\n\n{COMPOSE_RULE}"
     else:
         text = "📝 Draft is empty. Send me something, or tap ❌ Cancel."
 
