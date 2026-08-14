@@ -36,10 +36,9 @@ HEADER = "📢 <b>Noctua Announcement</b>"
 
 INTRO = (
     "📢 <b>New announcement</b>\n\n"
-    "Send me the announcement. Send as many messages as you like (text, photos, "
-    "videos, files). You can keep editing a sent message in this chat until you "
-    "hit Send; edits are included.\n\n"
-    "When you're ready, hit ✅ <b>Send</b>. /cancel to drop the draft."
+    "SEND ALL YOUR MULTIPLE MESSAGES BEFORE PRESSING ✅ <b>Send</b>.\n\n"
+    "Text, photos, videos, files are supported.\n\n"
+    "/cancel to drop the draft."
 )
 
 # Only fresh messages: an edit must not append the same id twice.
