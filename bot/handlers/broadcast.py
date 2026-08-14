@@ -34,11 +34,14 @@ CHAT_KEY = "bc_chat"        # the leader's DM chat id
 SEND_DELAY_S = 0.05  # gentle on Telegram's per-bot rate limit
 HEADER = "📢 <b>Noctua Announcement</b>"
 
+# The one instruction, verbatim on the intro and again on the status line: a
+# leader who taps Send too early has already broadcast a half announcement.
+COMPOSE_RULE = "SEND ALL YOUR MULTIPLE MESSAGES BEFORE PRESSING ✅ <b>Send</b>."
+
 INTRO = (
     "📢 <b>New announcement</b>\n\n"
-    "SEND ALL YOUR MULTIPLE MESSAGES BEFORE PRESSING ✅ <b>Send</b>.\n\n"
-    "Text, photos, videos, files are supported.\n\n"
-    "/cancel to drop the draft."
+    f"{COMPOSE_RULE}\n\n"
+    "Text, photos, videos, files are supported."
 )
 
 # Only fresh messages: an edit must not append the same id twice.
@@ -77,12 +80,8 @@ async def _show_status(context: ContextTypes.DEFAULT_TYPE) -> None:
     if chat_id is None:
         return
 
-    count = len(_draft(context))
-    if count:
-        text = (
-            f"📝 Draft: <b>{count}</b> message(s)\n"
-            "Send more, edit them above, or ✅ Send when you're ready."
-        )
+    if _draft(context):
+        text = COMPOSE_RULE
     else:
         text = "📝 Draft is empty. Send me something, or tap ❌ Cancel."
 
@@ -106,7 +105,9 @@ async def announce(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     _clear(context)
     context.user_data[CHAT_KEY] = update.effective_chat.id
     context.user_data[DRAFT_KEY] = []
-    await update.effective_message.reply_text(INTRO)
+    await update.effective_message.reply_text(
+        INTRO, reply_markup=keyboards.broadcast_cancel_keyboard()
+    )
     return COMPOSING
 
 
@@ -231,7 +232,12 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def abort(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     query = update.callback_query
     await query.answer()
-    _clear(context)  # the tapped message IS the status one — edit, don't delete
+    # Cancel sits on the intro as well as the status message. Tapping the
+    # intro's copy has to take the status message down too, or its Send button
+    # outlives the cancelled draft.
+    if query.message.message_id != context.user_data.get(STATUS_KEY):
+        await _delete_status(context)
+    _clear(context)  # the tapped message survives as the record — edit it
     try:
         await query.edit_message_text(
             "❌ Announcement cancelled. Nothing was sent.", reply_markup=None
