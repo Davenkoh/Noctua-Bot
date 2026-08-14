@@ -269,10 +269,21 @@ def composer_keyboard(recipients: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton("👀 Preview", callback_data="bc:prev"),
-                InlineKeyboardButton("↩️ Undo last", callback_data="bc:undo"),
+                InlineKeyboardButton("↩️ Undo last message", callback_data="bc:undo"),
             ],
             [InlineKeyboardButton("❌ Cancel", callback_data="bc:cancel")],
         ]
+    )
+
+
+def broadcast_cancel_keyboard() -> InlineKeyboardMarkup:
+    """Just ❌ Cancel, for the announcement composer's intro.
+
+    The intro has no other action yet — the next step is the leader sending
+    their messages — so a lone Cancel spares them remembering /cancel.
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Cancel", callback_data="bc:cancel")]]
     )
 
 
