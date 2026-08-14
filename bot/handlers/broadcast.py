@@ -11,7 +11,7 @@ import asyncio
 import logging
 
 from telegram import Update
-from telegram.error import TelegramError
+from telegram.error import Forbidden, TelegramError
 from telegram.ext import (
     CallbackQueryHandler,
     CommandHandler,
@@ -32,7 +32,6 @@ STATUS_KEY = "bc_status"    # message id of the composer status message
 CHAT_KEY = "bc_chat"        # the leader's DM chat id
 
 SEND_DELAY_S = 0.05  # gentle on Telegram's per-bot rate limit
-HEADER = "📢 <b>Noctua Announcement</b>"
 
 # The one instruction, verbatim on the intro and again on the status line: a
 # leader who taps Send too early has already broadcast a half announcement.
@@ -128,7 +127,6 @@ async def preview(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
     await query.answer("Preview below 👀")
     chat_id = context.user_data.get(CHAT_KEY, update.effective_chat.id)
-    await context.bot.send_message(chat_id, HEADER)
     missing = 0
     for message_id in draft:
         try:
@@ -191,15 +189,11 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     sent = failed = 0
     broken: set[int] = set()  # draft ids Telegram refuses to copy — skip for all
     for user_id in user_ids:
-        try:
-            await context.bot.send_message(user_id, HEADER)
-        except TelegramError as exc:
-            failed += 1
-            logger.info("Announcement header to %s failed: %s", user_id, exc)
-            await asyncio.sleep(SEND_DELAY_S)
-            continue
-        await asyncio.sleep(SEND_DELAY_S)
-
+        # Nothing is sent ahead of the draft any more, so the first copy is
+        # also the reachability check. Telegram tells the two apart: Forbidden
+        # is about this resident, anything else is about this draft message.
+        delivered = 0
+        unreachable = False
         for message_id in draft:
             if message_id in broken:
                 continue
@@ -207,6 +201,10 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                 await context.bot.copy_message(
                     chat_id=user_id, from_chat_id=chat_id, message_id=message_id
                 )
+            except Forbidden as exc:
+                unreachable = True
+                logger.info("Announcement to %s failed: %s", user_id, exc)
+                break
             except TelegramError as exc:
                 broken.add(message_id)
                 logger.warning(
@@ -215,8 +213,14 @@ async def send(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
                     exc,
                 )
                 continue
+            delivered += 1
             await asyncio.sleep(SEND_DELAY_S)
-        sent += 1
+
+        if unreachable:
+            failed += 1
+            await asyncio.sleep(SEND_DELAY_S)
+        elif delivered:
+            sent += 1
 
     report = f"📤 Sent to {sent}/{total} residents."
     if failed:
