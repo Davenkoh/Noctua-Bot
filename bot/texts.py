@@ -36,8 +36,9 @@ COLLECT_RULE_OWNER = (
 )
 
 BTN_LAUNDRY = "🧺 Laundry menu"
-BTN_ANNOUNCE = "📢 Announce"
+BTN_ANNOUNCE = "📢 Announce (now or scheduled)"
 BTN_POLL = "📋 Poll"
+BTN_RECALL = "♻️ Recall"
 
 GREETING = "🦉 Hi Owlet, <b>{name}</b>!"
 
@@ -47,8 +48,11 @@ GREETING = "🦉 Hi Owlet, <b>{name}</b>!"
 LEADER_BLOCK = (
     "<b>🔑 You're a Noctua leader, you get announcement privileges</b>",
     "",
-    f"1. “{BTN_ANNOUNCE}” sends a message to every resident.",
+    f"1. “{BTN_ANNOUNCE}” writes a message to every resident. Send it "
+    "straight away, or pick a time and let it go out then.",
     f"2. “{BTN_POLL}” lets you poll the house.",
+    f"3. “{BTN_RECALL}” deletes an announcement you sent back out of "
+    "everyone's chat, for up to 48 hours after it went.",
 )
 
 

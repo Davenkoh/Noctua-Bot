@@ -164,6 +164,45 @@ def test_sync_makes_the_database_match_the_file() -> int:
     return 4
 
 
+def test_sync_renames_residents_who_registered_under_the_old_name() -> int:
+    """Registration copies the name across once, so the file has to catch up.
+
+    Eren registered as "Adil Eren" hours before the master file settled on
+    "Eren". Without this the whitelist said one thing and every card the bot
+    drew said the other.
+    """
+    db.init_db()
+    db.roster_replace([("eren_an", "Adil Eren", "#08-22")])
+    db.upsert_user(8938421026, "eren_an", "Adil Eren", "#08-22")
+    db.upsert_user(4242, "mover", "Mover", "#07-01A")  # room drift, not a rename
+    db.roster_replace(
+        [("eren_an", "Adil Eren", "#08-22"), ("mover", "Mover", "#07-01A")]
+    )
+
+    path = _write(
+        "rename.txt",
+        "#08-22   | AYDOGAN, ADIL EREN | Eren  | @eren_an | goes by Eren\n"
+        "#07-01B  | MOVER, THE         | Mover | @mover   | changed rooms\n",
+    )
+
+    _quietly(lambda: roster_sync.main([str(path)]))
+    assert db.get_user(8938421026)["name"] == "Adil Eren", "plan mode must not write"
+
+    assert _quietly(lambda: roster_sync.main([str(path), "--apply"])) == 0
+    assert db.roster_lookup("eren_an")["name"] == "Eren", "whitelist follows the file"
+    assert db.get_user(8938421026)["name"] == "Eren", "and so does the registered row"
+
+    # A resident who moved room keeps the room they registered with: that is
+    # how the leader's views identify them, so it stays a warning.
+    assert db.get_user(4242)["room"] == "#07-01A", "rooms are warned about, not moved"
+    assert db.roster_lookup("mover")["room"] == "#07-01B", "the whitelist still moves"
+
+    # Nothing left to do: a second run must not keep reporting the rename.
+    assert _quietly(lambda: roster_sync.main([str(path), "--apply"])) == 0
+    assert not roster_sync.plan(roster_sync.parse_file(path)[0]).renames
+    return 7
+
+
 def test_sync_refuses_an_empty_file_and_bad_files() -> int:
     db.init_db()
     db.roster_replace([("alice", "Alice Tan", "#06-27")])
@@ -189,6 +228,7 @@ def main() -> None:
         test_parse_file_warns_when_the_full_name_is_missing,
         test_db_roster_replace_and_lookup,
         test_sync_makes_the_database_match_the_file,
+        test_sync_renames_residents_who_registered_under_the_old_name,
         test_sync_refuses_an_empty_file_and_bad_files,
     )
     total_cases = 0

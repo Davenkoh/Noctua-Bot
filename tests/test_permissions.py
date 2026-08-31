@@ -79,13 +79,16 @@ def test_command_menu_matches_the_tier() -> int:
 
     assert "announce" not in resident and "resetmachines" not in resident
     assert "poll" not in resident, "residents answer polls, they don't create them"
+    assert "schedule" not in resident and "waiting" not in resident
     assert "announce" in leader and "poll" in leader, "leaders get announce + poll"
+    assert "schedule" in leader and "waiting" in leader, "and scheduling, and its list"
     assert "resetmachines" not in leader, "leaders must NOT see /resetmachines"
     assert "announce" in admin and "poll" in admin and "resetmachines" in admin
+    assert "schedule" in admin and "waiting" in admin
     # /resetme is hidden from every tier, admins included.
     for menu in (resident, leader, admin):
         assert "resetme" not in menu, "/resetme must stay out of the menu"
-    return 6
+    return 9
 
 
 def test_the_poll_button_is_leaders_only() -> int:
@@ -97,13 +100,25 @@ def test_the_poll_button_is_leaders_only() -> int:
     flat_leader = [b.text for row in leader for b in row]
     assert keyboards.MENU_POLL not in flat_resident, "residents must not see Poll"
     assert keyboards.MENU_ANNOUNCE not in flat_resident
+    assert keyboards.MENU_RECALL not in flat_resident, "residents cannot recall"
     assert keyboards.MENU_POLL in flat_leader, "leaders get the Poll button"
     assert keyboards.MENU_ANNOUNCE in flat_leader
-    # The button caption must route to the poll conversation.
+    assert keyboards.MENU_RECALL in flat_leader, "and the recall door"
+    # A button caption that no regex matches is a button that does nothing.
     import re
 
     assert re.match(keyboards.RX_POLL, keyboards.MENU_POLL), "RX_POLL must match its caption"
-    return 5
+    assert re.match(keyboards.RX_RECALL, keyboards.MENU_RECALL), "RX_RECALL too"
+    assert re.match(keyboards.RX_ANNOUNCE, keyboards.MENU_ANNOUNCE), "RX_ANNOUNCE too"
+    # Retired captions still have to route, or a leader whose keyboard predates
+    # the merge taps a dead button forever.
+    assert re.match(keyboards.RX_ANNOUNCE, keyboards.LEGACY_ANNOUNCE), "old Announce"
+    assert re.match(keyboards.RX_SCHEDULE, keyboards.LEGACY_SCHEDULE), "old Scheduled"
+    # And they must not both open the same door: the retired one led to the
+    # timed step, which is the whole reason it is kept separate.
+    assert not re.match(keyboards.RX_ANNOUNCE, keyboards.LEGACY_SCHEDULE)
+    assert not re.match(keyboards.RX_SCHEDULE, keyboards.MENU_ANNOUNCE)
+    return 12
 
 
 # --------------------------------------------------------------------------

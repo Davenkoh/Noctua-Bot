@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Iterator
 
 from . import config, util
@@ -60,6 +60,52 @@ CREATE TABLE IF NOT EXISTS poll_recipients (
   PRIMARY KEY (poll_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_poll_recipients_poll ON poll_recipients(poll_id);
+-- An announcement a leader composed now and asked the bot to send later.
+-- message_ids is the draft: the leader's own message ids in their own chat,
+-- comma-separated in send order, because that is all a copy_message fan-out
+-- needs and a child table for three integers would earn nothing. The draft
+-- itself is never copied here, so a leader editing one of those messages
+-- before it fires still changes what goes out.
+CREATE TABLE IF NOT EXISTS scheduled_announcements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_by INTEGER NOT NULL REFERENCES users(user_id),
+  chat_id INTEGER NOT NULL,
+  message_ids TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  send_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  settled_at TEXT,
+  settled_by INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_pending
+  ON scheduled_announcements(status, send_at);
+-- An announcement that actually went out, immediate or scheduled. Distinct
+-- from scheduled_announcements, which is the queue of ones still waiting:
+-- this is the record of a fan-out that happened. drafted is how many messages
+-- the leader wrote, which is the count they recognise as "the announcement".
+CREATE TABLE IF NOT EXISTS announcements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  created_by INTEGER NOT NULL REFERENCES users(user_id),
+  chat_id INTEGER NOT NULL,
+  drafted INTEGER NOT NULL,
+  sent_at TEXT NOT NULL,
+  recalled_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_announcements_author
+  ON announcements(created_by, id DESC);
+-- Where every delivered copy landed. copy_message hands back an id for each
+-- copy it makes and this is the only place it is kept: Telegram has no call
+-- that tells a bot what it has sent, so an announcement whose copies were not
+-- written down here can never be deleted again.
+CREATE TABLE IF NOT EXISTS announcement_copies (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  announcement_id INTEGER NOT NULL REFERENCES announcements(id),
+  chat_id INTEGER NOT NULL,
+  message_id INTEGER NOT NULL,
+  deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_announcement_copies_live
+  ON announcement_copies(announcement_id, deleted_at);
 """
 
 # Every session read is joined with its owner so handlers can render
@@ -270,13 +316,21 @@ def roster_rows_for_room(room: str) -> list[sqlite3.Row]:
     ).fetchall()
 
 
-def roster_apply(removals: list[str], upserts: list[tuple[str, str, str]]) -> None:
+def roster_apply(
+    removals: list[str],
+    upserts: list[tuple[str, str, str]],
+    renames: list[tuple[int, str]] | None = None,
+) -> None:
     """Apply a batch of roster edits atomically.
 
     One transaction for the whole batch so a correction that retags a room
     (drop the wrong handle, add the right one) can never leave both handles
     whitelisted for that room, not even for the instant between two writes.
     Removals run first: that is what frees a room for its new occupant.
+
+    ``renames`` carries (user_id, name) for residents who already registered
+    under a display name the roster has since changed. They ride the same
+    transaction so the whitelist and what the bot shows can never disagree.
     """
     with _tx() as conn:
         for handle in removals:
@@ -288,6 +342,8 @@ def roster_apply(removals: list[str], upserts: list[tuple[str, str, str]]) -> No
                 "room = excluded.room",
                 row,
             )
+        for user_id, name in renames or []:
+            conn.execute("UPDATE users SET name = ? WHERE user_id = ?", (name, user_id))
 
 
 # --------------------------------------------------------------------------
@@ -562,3 +618,175 @@ def poll_recipient(poll_id: int, user_id: int) -> sqlite3.Row | None:
         "SELECT * FROM poll_recipients WHERE poll_id = ? AND user_id = ?",
         (poll_id, user_id),
     ).fetchone()
+
+
+# --------------------------------------------------------------------------
+# scheduled announcements
+# --------------------------------------------------------------------------
+
+PENDING, SENT, CANCELLED, MISSED = "pending", "sent", "cancelled", "missed"
+
+
+def schedule_announcement(
+    created_by: int, chat_id: int, message_ids: list[int], send_at: datetime
+) -> int:
+    with _tx() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO scheduled_announcements
+                (created_by, chat_id, message_ids, created_at, send_at, status)
+            VALUES (?, ?, ?, ?, ?, 'pending')
+            """,
+            (
+                created_by,
+                chat_id,
+                ",".join(str(message_id) for message_id in message_ids),
+                util.to_iso(util.now_utc()),
+                util.to_iso(send_at),
+            ),
+        )
+        return int(cursor.lastrowid)
+
+
+def get_announcement(announcement_id: int) -> sqlite3.Row | None:
+    return connection().execute(
+        "SELECT * FROM scheduled_announcements WHERE id = ?", (announcement_id,)
+    ).fetchone()
+
+
+def pending_announcements() -> list[sqlite3.Row]:
+    """Everything still waiting to go out, soonest first."""
+    return connection().execute(
+        "SELECT * FROM scheduled_announcements WHERE status = 'pending' "
+        "ORDER BY send_at, id"
+    ).fetchall()
+
+
+def draft_ids(row: sqlite3.Row) -> list[int]:
+    """The stored draft, back as message ids in send order."""
+    return [int(part) for part in row["message_ids"].split(",") if part.strip()]
+
+
+def claim_announcement(announcement_id: int) -> sqlite3.Row | None:
+    """Take an announcement off the pending list, once, before sending it.
+
+    Marking it sent *up front* is deliberate. A duplicate timer, or a restore
+    racing the job that is already running, must not fan the same messages out
+    to 120 people twice; a crash halfway through the fan-out costs the tail of
+    one send, which is the cheaper of the two failures. Returns the row (with
+    its pre-claim status) or ``None`` if somebody got there first.
+    """
+    with _tx() as conn:
+        row = conn.execute(
+            "SELECT * FROM scheduled_announcements WHERE id = ?", (announcement_id,)
+        ).fetchone()
+        if row is None or row["status"] != PENDING:
+            return None
+        conn.execute(
+            "UPDATE scheduled_announcements SET status = ?, settled_at = ? WHERE id = ?",
+            (SENT, util.to_iso(util.now_utc()), announcement_id),
+        )
+        return row
+
+
+def settle_announcement(announcement_id: int, status: str, by: int | None = None) -> bool:
+    """Cancel or write off a pending announcement. False if it is not pending.
+
+    The pending check is the guard: a leader tapping ❌ Cancel in the same
+    second the timer fires either gets there first and stops the send, or
+    finds it already claimed and is told it has gone out.
+    """
+    with _tx() as conn:
+        cursor = conn.execute(
+            "UPDATE scheduled_announcements SET status = ?, settled_at = ?, "
+            "settled_by = ? WHERE id = ? AND status = 'pending'",
+            (status, util.to_iso(util.now_utc()), by, announcement_id),
+        )
+        return cursor.rowcount > 0
+
+
+# --------------------------------------------------------------------------
+# sent announcements + recall
+# --------------------------------------------------------------------------
+
+
+def open_announcement(created_by: int, chat_id: int, drafted: int) -> int:
+    """Start the record of a fan-out, before the first copy goes out.
+
+    Opened up front rather than written at the end so that a send interrupted
+    halfway still leaves every copy that did reach somebody recallable. An
+    announcement nobody could be reached with simply ends up with no copies,
+    and :func:`recallable_announcements` skips it.
+    """
+    with _tx() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO announcements (created_by, chat_id, drafted, sent_at)
+            VALUES (?, ?, ?, ?)
+            """,
+            (created_by, chat_id, drafted, util.to_iso(util.now_utc())),
+        )
+        return int(cursor.lastrowid)
+
+
+def record_copies(announcement_id: int, copies: list[tuple[int, int]]) -> None:
+    """Note where copies landed. ``copies`` is ``(chat_id, message_id)`` pairs."""
+    if not copies:
+        return
+    with _tx() as conn:
+        conn.executemany(
+            "INSERT INTO announcement_copies (announcement_id, chat_id, message_id) "
+            "VALUES (?, ?, ?)",
+            [(announcement_id, chat_id, message_id) for chat_id, message_id in copies],
+        )
+
+
+def recallable_announcements(created_by: int, since: str) -> list[sqlite3.Row]:
+    """One leader's announcements that can still be taken back, newest first.
+
+    ``since`` is the ISO cutoff: Telegram only lets a bot delete its own
+    messages for a fixed window, so anything older is not offered rather than
+    offered and then refused. Announcements with no copies left standing drop
+    out on their own, which is what makes a half-finished recall resumable.
+    """
+    return connection().execute(
+        """
+        SELECT a.*, COUNT(c.id) AS live
+        FROM announcements a
+        JOIN announcement_copies c
+          ON c.announcement_id = a.id AND c.deleted_at IS NULL
+        WHERE a.created_by = ? AND a.recalled_at IS NULL AND a.sent_at >= ?
+        GROUP BY a.id
+        ORDER BY a.id DESC
+        """,
+        (created_by, since),
+    ).fetchall()
+
+
+def live_copies(announcement_id: int) -> list[sqlite3.Row]:
+    """Copies of one announcement still believed to be in a resident's chat."""
+    return connection().execute(
+        "SELECT id, chat_id, message_id FROM announcement_copies "
+        "WHERE announcement_id = ? AND deleted_at IS NULL ORDER BY id",
+        (announcement_id,),
+    ).fetchall()
+
+
+def mark_copy_gone(copy_id: int) -> None:
+    """One copy is off the chat. Written as the recall goes, not at the end,
+    so a pass that dies partway never deletes the same copies twice."""
+    with _tx() as conn:
+        conn.execute(
+            "UPDATE announcement_copies SET deleted_at = ? WHERE id = ?",
+            (util.to_iso(util.now_utc()), copy_id),
+        )
+
+
+def close_announcement(announcement_id: int) -> None:
+    """Mark a recall finished. Only called once nothing is left standing."""
+    with _tx() as conn:
+        conn.execute(
+            "UPDATE announcements SET recalled_at = ? WHERE id = ? "
+            "AND recalled_at IS NULL",
+            (util.to_iso(util.now_utc()), announcement_id),
+        )
