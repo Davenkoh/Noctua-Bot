@@ -9,7 +9,7 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, ContextTypes, Defaults
 
 from . import commands, config, db, jobs
-from .handlers import register_all
+from .handlers import broadcast, register_all
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,13 @@ async def post_init(application: Application) -> None:
     restored = jobs.restore_jobs(application)
     if restored:
         logger.info("Restored %s laundry timer(s) from the database", restored)
+    armed, missed = await broadcast.restore_scheduled(application)
+    if armed or missed:
+        logger.info(
+            "Scheduled announcements: %s re-armed, %s written off as too late",
+            armed,
+            missed,
+        )
     await commands.refresh(application.bot)
 
 

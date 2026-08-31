@@ -670,3 +670,372 @@ reusing (see `POLL_TEST_HANDLES`) rather than the specific flag.
 Residents needed no action. Inline keyboards are rebuilt per message, so the
 next tap after the deploy showed the new screen. Only the *reply* keyboard is
 cached client-side, which is why the 📋 Poll button in v1.4 needed a /start.
+
+---
+
+# v1.6 changes (2026-08-31): scheduled announcements
+
+`📢 Announce` could only fire immediately, so a notice written at midnight
+either went out at midnight or waited for somebody to remember it at nine.
+The composer now has a second exit.
+
+## 1. Two doors, one composer
+
+The leaders' menu grows a second announcement button, and Poll moves down a
+row rather than sharing one with either of them.
+
+```
+[Laundry menu]
+[Profile] [Help]
+[Announce] [Scheduled Announce]   <- leaders only
+[Poll]                            <- leaders only
+```
+
+`Scheduled Announce` (`/schedule`) is not a second flow. It is the same
+composer with `MODE_KEY` set, which changes two things: the intro says a time
+will be asked for, and `composer_keyboard(schedule_first=True)` puts the timed
+exit on top. "Send now" survives the reorder in both directions, because
+changing your mind about *when* is not a reason to rewrite *what*.
+
+```
+Announce                        Scheduled Announce
+   [Send to 118 now]               [Send it later]
+   [Send it later]                 [Send to 118 now]
+   [Preview] [Undo last]           [Preview] [Undo last]
+   [Cancel]                        [Cancel]
+```
+
+Both land on the same "when?" step, which answers the question three ways
+because they suit different answers. The presets cover the times a house
+notice actually goes out; the picker handles any other moment without typing;
+typing stays for whoever finds "fri 6:30pm" faster than four taps.
+
+```
+When should this go out?
+Tap a time, pick a date below, or type one:
+   tomorrow 9am / fri 6:30pm / 1 sep 0900 / in 90 minutes
+[In 1 hour (3:05 PM)]  [In 3 hours (5:05 PM)]
+[Tonight, 8:00 PM]     [Tomorrow, 9:00 AM]
+[Pick a date and time]
+[Back to the draft]
+[Cancel]
+```
+
+Every route ends on the same confirmation card. It is the only defence
+against a misread time, so it always spells out the weekday and the date even
+for today, and nothing is written to the database until it is tapped.
+
+```
+Send this later?
+  Tomorrow (Tue 1 Sep), 9:00 AM
+  in about 19 hours
+  2 message(s) in the draft.
+[Schedule it]
+[Different time] [Cancel]
+```
+
+`SCHEDULING` is a real conversation state, not a flag: it swaps the draft
+collector for the time reader, so a message that arrives while the bot is
+asking for a time is read as a time and never appended to an announcement the
+leader has already finished writing.
+
+## 1b. The date and time picker
+
+Three grids, no typing, modelled on Telegram's own scheduler: a month, then
+an hour, then the minutes.
+
+```
+[.] [September 2026] [>]        Fri 4 Sep                 Fri 4 Sep, 18:00
+[Mo][Tu][We][Th][Fr][Sa][Su]    [00][01][02][03][04][05]  [:00][:05][:10][:15]
+[ .][ 1][ 2][ 3][ 4][ 5][ 6]    [06][07][08][09][10][11]  [:20][:25][:30][:35]
+...                             [12][13][14][15][16][17]  [:40][:45][:50][:55]
+[Back to the times]             [18][19][20][21][22][23]  [Back to the hours]
+[Cancel]                        [Back to the calendar]    [Cancel]
+```
+
+Each step encodes its whole selection in the next step's callback data
+(`bc:d:20260904` then `bc:h:20260904:18` then `bc:m:20260904:1830`), so the
+picker holds no state of its own and a stale keyboard cannot half-apply.
+
+Everything already past is drawn as an inert cell rather than offered and then
+refused: days before today, hours gone by, minutes inside this one. The month
+arrows stop at the ends of the range, so every page the leader can reach has a
+day they can actually tap. `noop` therefore had to become a registered
+handler; an unanswered callback spins in the client until it times out, which
+reads as the bot having crashed.
+
+The hour grid is 24-hour, which halves the rows. That is only safe because
+`_take()` funnels every route (typed, preset, picked) into the same
+confirmation card, and the card reads the choice back as `6:30 PM`. Nobody
+commits to `18` without seeing `PM` first. `_take` is also where a slot that
+went stale between drawing the grid and tapping it is caught.
+
+Minutes step in fives. Anyone who genuinely wants 9:07 types it.
+
+## 2. `bot/when.py`
+
+A small grammar, not a date library. It takes the current local time and
+returns a local one, so callers convert at the database edge like everything
+else. Accepts a clock (`18:30`, `6:30pm`, `6.30pm`, `6pm`, `1830`), a day word
+(`today`, `tonight`, `tomorrow`, `tmr`), a weekday, a date (`1 sep`, `sep 1`,
+`1/9`, `2026-09-01`), and `in 90 minutes` / `in 2h` / `in 3 days`.
+
+Two guesses, both safe only because of the confirm card:
+
+- a bare clock means the next time it reads, so `9am` at lunchtime is tomorrow;
+- a weekday always means the coming one, so `mon` on a Monday is in seven days.
+
+It refuses rather than guesses. A day with no clock (`tomorrow`) is ambiguous
+between breakfast and midnight, and a leftover word it did not understand
+(`banana 9am`) means the word carrying the meaning may have been the one
+dropped. The date patterns match the month and weekday names literally, so
+the first word of "please friday 9am" cannot shadow the day.
+
+## 3. Schema
+
+```sql
+CREATE TABLE scheduled_announcements (
+  id, created_by, chat_id, message_ids, created_at,
+  send_at, status, settled_at, settled_by
+);
+```
+
+`message_ids` is the draft: the leader's own message ids, comma-separated in
+send order. The draft is never copied here, which is what lets a leader keep
+fixing a typo until it fires, and is why a message they delete first is
+skipped instead (`Report.broken`, reported to them afterwards).
+
+`status` is `pending` → `sent` / `cancelled` / `missed`.
+
+## 4. Sending once, or not at all
+
+`db.claim_announcement` flips `pending` → `sent` in one transaction **before**
+the fan-out, and `db.settle_announcement` only touches a row that is still
+`pending`. Between them:
+
+- a duplicate timer, or a restore racing the job it is restoring, finds
+  nothing to send;
+- a leader tapping ❌ Cancel in the same second the timer fires either stops
+  the send or is told it has already gone out.
+
+Marking it sent up front loses the tail of a fan-out that crashes halfway.
+That is the cheaper of the two failures: the other one is 120 residents
+getting the same announcement twice.
+
+## 5. Restarts and the grace window
+
+`broadcast.restore_scheduled` runs from `post_init` beside
+`jobs.restore_jobs`. Anything still due is re-armed. Anything more than
+`LATE_GRACE_MIN` (30) late is written off as `missed` and its author told,
+because a deploy takes seconds and a real outage does not: "the laundry room
+shuts at 2" arriving at six is worse than not arriving, and only the leader
+can tell which of the two theirs is.
+
+The same window makes a confirm card that sat unanswered behave sensibly.
+Inside it, the leader gets what they asked for and the timer fires at once;
+past it they are sent back to pick a time.
+
+## 6. The waiting list
+
+`/waiting` lists what is pending, one message each so each carries its own
+Cancel button, capped at ten with a line saying how many were left out. It is
+`/waiting` and not `/scheduled` because `/schedule` now opens the composer,
+and two commands one letter apart that do different things is a trap;
+`/scheduled` survives as an alias, since it is what a leader will guess. That button (`bcx:<id>`) is a stateless handler, like the poll
+cards: the receipt outlives the composer that produced it and has to still
+work when the leader scrolls back to it days later.
+
+Any leader may cancel any of them, not only the author. A notice that has
+turned out to be wrong should not have to wait for whoever wrote it to wake
+up, and the author is told when somebody else called it off.
+
+## 7. Audience
+
+`deliver()` reads `db.all_user_ids()` when it runs, not when the announcement
+was written. Somebody who registers this afternoon is a resident by tonight,
+and the house notice they are missing is the one they most need.
+
+## 8. Rollout
+
+Reply keyboards are cached client-side until the bot sends a new one, so the
+Scheduled Announce button appears for a leader only after their next `/start`
+(or anything else that re-sends the menu). Same lesson as the Poll button in
+v1.4. `/schedule` and `/waiting` work immediately either way, and the command
+menu refreshes itself on the next restart.
+
+Nothing needs a migration: `scheduled_announcements` is created by the usual
+`CREATE TABLE IF NOT EXISTS` on startup.
+
+## v1.6 grammar
+
+```
+bc:when        open "send it later"
+bc:at:<key>    quick time button (1h / 3h / eve / am)
+bc:cal:<YYYYMM>         picker: draw that month
+bc:d:<YYYYMMDD>         picker: day chosen, ask for the hour
+bc:h:<YYYYMMDD>:<HH>    picker: hour chosen, ask for the minutes
+bc:m:<YYYYMMDD>:<HHMM>  picker: the whole moment, go to confirm
+noop           an inert grid cell, now actually registered
+bc:ok          confirm the resolved time
+bc:redo        back to the draft
+bcx:<aid>      cancel scheduled announcement <aid>, from any message
+```
+
+
+---
+
+# v1.7 changes (2026-09-01): recalling an announcement
+
+## 0. Why this could not be done before
+
+A leader sent a two-message announcement and asked for it back minutes later.
+It was not possible, and the 48-hour delete window was not the reason.
+
+`deliver()` fanned the draft out with `copy_message` and threw away what it
+returned. That return value carries the `message_id` of the copy just created,
+and it is the only time Telegram ever names it: there is no API call that asks
+a bot what it has sent. Nothing was written to the DB, successful copies were
+not logged, and `httpx` is pinned to WARNING so no response body reached
+`noctua.log` either. Two messages existed in ~120 chats and the bot could not
+name a single one of them.
+
+Everything below follows from that. The feature is mostly bookkeeping; the
+deleting is the easy half.
+
+**Announcements sent before this version are not recallable and never will
+be.** There is nothing to reconstruct from.
+
+## 1. Schema
+
+```sql
+CREATE TABLE announcements (          -- a fan-out that actually happened
+  id, created_by, chat_id, drafted, sent_at, recalled_at
+);
+CREATE TABLE announcement_copies (    -- where each copy landed
+  id, announcement_id, chat_id, message_id, deleted_at
+);
+```
+
+Distinct from `scheduled_announcements`, which is the queue of sends still
+waiting. A scheduled announcement that fires writes an `announcements` row
+like any other, under the leader who scheduled it.
+
+`drafted` is how many messages the leader wrote. That is the number they
+recognise as "the announcement", so it is the number on the buttons; the copy
+count (`drafted` x residents) only appears in the card and the receipt.
+
+## 2. `deliver()` records as it goes
+
+`deliver(bot, from_chat_id, draft, *, created_by)` opens the `announcements`
+row **before** the first copy, then flushes one batch of `announcement_copies`
+per resident. Opening up front means a fan-out interrupted halfway still
+leaves every copy that did go out recallable; flushing per resident rather
+than per copy is one write instead of N, and costs at most one resident's
+chain if the process dies mid-flight.
+
+## 3. The stack
+
+Per leader, newest first, filtered to `recalled_at IS NULL`, `sent_at` inside
+48 hours, and at least one copy with `deleted_at IS NULL`. `/recall` acts on
+the top of it; recalling again walks one step further back.
+
+Leaders do not share a stack. "Undo the last announcement" turning out to mean
+somebody else's notice is a worse surprise than having to ask them to undo
+their own.
+
+An announcement drops off the stack on its own once nothing of it is left
+standing, which is what makes a partly-failed recall resumable rather than
+needing its own retry state.
+
+## 4. The card (`♻️ Recall` / `/recall`)
+
+Stateless, not a conversation: it recomputes the stack on every tap, so a card
+scrolled back to an hour later acts on what is true now.
+
+```
+♻️ Recall an announcement?
+
+📢 Latest: 2 message(s), sent 14 min ago.
+🕒 Today (Tue 1 Sep), 12:05 AM
+📬 240 copies of it are still standing.
+🗂 3 of your announcements can still be taken back.     ← only when > 1
+
+This deletes the copies out of every resident's chat. Nobody is told it
+happened, and anyone who has already read it has already read it.
+
+[ ♻️ Recall all 3 announcements (7 messages) ]
+[ ♻️ Just the latest (2 messages) ]
+[ ❌ Cancel ]
+```
+
+With one announcement in reach the two recall buttons would mean the same
+thing, so it collapses to `[ ♻️ Recall it (2 messages) ]`.
+
+Buttons come off before the first delete: the pass takes about as long as the
+send did, and a second tap inside that window would start a second sweep over
+copies the first is still working through.
+
+After a pass the receipt leads and the card redraws underneath it. If the
+stack still has something, it re-asks ("Recall the next one?") with fresh
+buttons. If it is empty, the card closes with "Nothing else can be recalled."
+and no buttons at all.
+
+## 5. Telegram's three answers
+
+Same split as the send path, and for the same reason: they are three different
+situations, not three flavours of failure.
+
+| Answer | Counted as | Copy row | Effect on the stack |
+|---|---|---|---|
+| deleted | `deleted` | closed | drops off when all are closed |
+| `BadRequest` | `missing` (already gone) | closed | drops off |
+| `Forbidden` | `unreachable` (blocked the bot) | closed | drops off |
+| other `TelegramError` | `failed` | left open | stays, so a retry finds it |
+
+`Forbidden` is closed rather than retried on purpose. That copy can never be
+deleted, so leaving it open would keep offering a recall that cannot finish
+for two days. The receipt says so instead.
+
+## 6. Rollout
+
+Both tables are created by the usual `CREATE TABLE IF NOT EXISTS` on startup;
+no migration. The `♻️ Recall` button reaches a leader on their next `/start`
+(reply keyboards are cached client-side, same as the Poll and Scheduled
+Announce buttons before it); `/recall` works immediately either way.
+
+## v1.7 grammar
+
+```
+rc:all         recall every announcement still in reach, newest first
+rc:one         recall only the most recent one, then offer the next
+rc:no          close the card, delete nothing
+```
+
+---
+
+# v1.8 changes (2026-09-01): one announcement door
+
+`📢 Announce` and `📅 Scheduled Announce` were two buttons onto one composer,
+which made a leader decide the timing of a notice before writing a word of it.
+The composer already offers `✅ Send` and `🕒 Send it later` side by side once
+you are inside, so the choice belongs there and not on the menu.
+
+- `MENU_ANNOUNCE` is now `📢 Announce (now or scheduled)`, full width. The
+  caption says what is behind it, which is the point of the rename.
+- `📅 Scheduled Announce` leaves the menu and becomes `LEGACY_SCHEDULE`. Its
+  caption still routes to `announce_later` via `RX_SCHEDULE`, and it joins
+  `LEGACY_CAPTIONS` so a leader tapping it gets the new keyboard once.
+- `📢 Announce` does the same, as `LEGACY_ANNOUNCE`, for exactly the same
+  reason: reply keyboards live in the client until the bot replaces one, so a
+  renamed button is a dead button until then unless the old caption is kept.
+- `/schedule` is unchanged and stays in the command menu. It is the door for a
+  leader who already knows the notice is for later.
+
+Leader menu after this change:
+
+```
+[🧺 Laundry menu]
+[👤 Profile] [❓ Help]
+[📢 Announce (now or scheduled)]
+[📋 Poll] [♻️ Recall]
+```

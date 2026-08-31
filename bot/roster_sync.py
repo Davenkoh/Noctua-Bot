@@ -16,9 +16,11 @@ Nothing is written without ``--apply``, and the plan is printed either way.
 Safe to run while the bot is polling: SQLite is in WAL mode, and the whole
 sync is one transaction.
 
-Syncing never un-registers anyone who already tapped /start. Registration
+Syncing never un-registers anyone who already tapped /start: registration
 copies the name and room across once and residents keep access afterwards,
-by design; the plan warns whenever that gap applies.
+by design. Where the file has since changed the display name, the sync
+renames them too, so the file stays the source of truth for what the bot
+shows. A room that has moved is only warned about, never rewritten.
 """
 
 from __future__ import annotations
@@ -134,6 +136,7 @@ def _reject_duplicates(entries: list[Entry], errors: list[str]) -> None:
 class Plan:
     adds: list[Entry]
     changes: list[tuple[Entry, str, str]]   # entry, old name, old room
+    renames: list[tuple[int, str, str, str]]  # user_id, handle, old name, new
     removes: list[tuple[str, str, str]]     # handle, name, room (db rows)
     unchanged: int
     warnings: list[str]
@@ -144,7 +147,7 @@ def plan(entries: list[Entry]) -> Plan:
     target = {e.handle: e for e in entries if e.handle is not None}
     current = {row["handle"]: row for row in db.roster_all()}
 
-    adds, changes, removes, unchanged, warnings = [], [], [], 0, []
+    adds, changes, renames, removes, unchanged, warnings = [], [], [], [], 0, []
 
     for handle, entry in target.items():
         row = current.get(handle)
@@ -154,7 +157,7 @@ def plan(entries: list[Entry]) -> Plan:
             changes.append((entry, row["name"], row["room"]))
         else:
             unchanged += 1
-        _warn_registered(warnings, handle, entry.room)
+        _check_registered(warnings, renames, handle, entry)
 
     for handle, row in current.items():
         if handle not in target:
@@ -166,12 +169,30 @@ def plan(entries: list[Entry]) -> Plan:
                     f"({registered['room']}) and keeps access until purged"
                 )
 
-    return Plan(adds, changes, removes, unchanged, warnings)
+    return Plan(adds, changes, renames, removes, unchanged, warnings)
 
 
-def _warn_registered(warnings: list[str], handle: str, room: str) -> None:
+def _check_registered(
+    warnings: list[str],
+    renames: list[tuple[int, str, str, str]],
+    handle: str,
+    entry: Entry,
+) -> None:
+    """Look for drift between a registered resident and the file.
+
+    Registration copies the display name and room across once, so a resident
+    who registered before an edit keeps whatever was on file that day. The
+    name is the bot's to correct: it is only what residents are shown, and
+    leaving it stale means the file says Eren while every card says Adil Eren.
+    The room is not, because the leader's views identify people by it, so a
+    move stays a warning for a human to confirm.
+    """
     row = db.user_by_handle(handle)
-    if row is not None and row["room"] != room:
+    if row is None:
+        return
+    if row["name"] != entry.display:
+        renames.append((row["user_id"], handle, row["name"], entry.display))
+    if row["room"] != entry.room:
         warnings.append(
             f"@{handle} registered earlier as {row['name']} ({row['room']}), "
             f"so the bot still shows that room"
@@ -191,6 +212,8 @@ def report(result: Plan, *, applied: bool) -> None:
         was = old_room if old_room != entry.room else old_name
         now = entry.room if old_room != entry.room else entry.display
         print(f"  {mark} update  @{entry.handle} ({entry.display}): {was} -> {now}")
+    for _user_id, handle, old_name, new_name in result.renames:
+        print(f"  {mark} rename  @{handle} is registered as {old_name} -> {new_name}")
     for handle, name, room in result.removes:
         print(f"  {mark} remove  @{handle} ({name}) {room}")
     if result.unchanged:
@@ -206,8 +229,9 @@ def apply(result: Plan) -> None:
         for entry in result.adds + [change[0] for change in result.changes]
         if entry.handle is not None
     ]
-    if removals or upserts:
-        db.roster_apply(removals, upserts)
+    renames = [(user_id, new_name) for user_id, _h, _old, new_name in result.renames]
+    if removals or upserts or renames:
+        db.roster_apply(removals, upserts, renames)
 
 
 def show_roster() -> None:
@@ -243,7 +267,12 @@ def run(path: Path, *, write: bool) -> int:
         print(f"       ⚠️  {warning}")
 
     print()
-    touched = len(result.adds) + len(result.changes) + len(result.removes)
+    touched = (
+        len(result.adds)
+        + len(result.changes)
+        + len(result.renames)
+        + len(result.removes)
+    )
     print(
         f"{path.name}: {len(entries)} rooms, {with_handle} with a handle, "
         f"{len(entries) - with_handle} without."

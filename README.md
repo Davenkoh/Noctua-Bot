@@ -1,15 +1,16 @@
 # Noctua Bot
 
-🦉 A Telegram bot for the Noctua dorm — tracks the shared laundry machines and lets dorm leaders broadcast announcements to everyone who's registered.
+🦉 A Telegram bot for the Noctua dorm — tracks the shared laundry machines and lets dorm leaders broadcast announcements to everyone who's registered, and take them back within 48 hours.
 
 ## What it does
 
-The persistent menu has three rows:
+The persistent menu has two rows, or four for a dorm leader:
 
 ```
 [🧺 Laundry menu]
 [👤 Profile] [❓ Help]
-[📢 Announce]        ← dorm leaders only
+[📢 Announce (now or scheduled)]   ← dorm leaders only
+[📋 Poll] [♻️ Recall]              ← dorm leaders only
 ```
 
 - **🧺 Laundry menu** lists all four machines with their live state (🟢 free or 🔴 running), plus two sections underneath:
@@ -17,7 +18,19 @@ The persistent menu has three rows:
   - **📊 Machine status** — all four machines at a glance, so nobody needs to walk down just to check. Free machines also show who used them last and when. (`/status` still works as a shortcut.)
   - **🔔 Nudge last user** — lists every free machine that may still hold someone's load, one tap to nudge its owner (throttled to once every few minutes per machine).
 - **📋 Poll** (`/poll`, dorm leaders only) asks everyone who's in. The leader types one question, and every registered resident gets a card with **✅ I'm in** and **❌ Can't**. All the cards show the same running list of **names** (never rooms), so residents can see who else is coming. Because each resident holds their own copy of the card, a tap re-renders only the tapper's; everyone else pulls the latest with **🔄 Refresh**. The leader who created the poll also gets a summary card that additionally lists, with rooms, whoever hasn't answered yet. Set `POLL_TEST_HANDLES` in `.env` to dry-run a poll at a couple of people before sending it to the whole dorm.
-- **📢 Announce** (dorm leaders only, see [Configuration](#configuration)) opens a draft composer: send as many messages as you like — text, photos, videos, files — and keep editing them in the chat right up until you hit Send. **👀 Preview** shows the draft as residents will see it, **↩️ Undo last** drops the most recent message, **❌ Cancel** drops the whole draft. Sending delivers a header followed by every draft message, in order, to each registered resident, then reports how many were reached and how many were unreachable.
+- **📢 Announce (now or scheduled)** (dorm leaders only, see [Configuration](#configuration)) opens a draft composer: send as many messages as you like (text, photos, videos, files) and keep editing them in the chat right up until it goes out. **👀 Preview** shows the draft as residents will see it, **↩️ Undo last** drops the most recent message, **❌ Cancel** drops the whole draft. Every draft message is copied, in order, to each registered resident, and the bot reports how many were reached and how many were unreachable.
+  - **🕒 Send it later** turns the same draft into a scheduled one, which is why there is a single announcement button rather than two doors you have to choose between before writing a word. `/schedule` opens the composer straight on the timed step if you already know you want one.
+- **Scheduling an announcement** starts from that **🕒 Send it later** button (or `/schedule`). Write the draft exactly as above, then answer **when?** three ways: tap a quick time (*In 1 hour*, *Tonight 8 PM*, *Tomorrow 9 AM*), tap **📅 Pick a date and time** for a calendar, hour and minute grid, or just type it (`tomorrow 9am`, `fri 6:30pm`, `1 sep 0900`, `in 90 minutes`). You can change your mind either way right up until it is armed.
+  - Whichever route you take, the bot reads the moment back with its weekday and date (*Tomorrow (Tue 1 Sep), 9:00 AM*) and nothing is armed until you tap **✅ Schedule it**. That confirmation is the only guard against a misread time, so it is never skipped. The hour grid is a 24-hour clock; the confirmation is the one that says AM or PM.
+  - `/waiting` lists everything still going out, each with its own **❌ Cancel**. Any leader can cancel any of them, and the author is told if somebody else does.
+  - The draft is not copied until it sends, which is what lets you keep fixing a typo all afternoon. The flip side: leave those messages in your chat with the bot. One you delete before it fires is skipped, and the delivery report says so.
+  - The audience is read at send time, so residents who register between scheduling and sending get it too.
+  - Scheduled announcements survive a restart. If the bot is down when one is due it still goes out on the next start, unless it is more than 30 minutes late. Past that it is dropped and the leader who wrote it is told, because a notice about this afternoon arriving tonight is worse than one that never arrives.
+- **♻️ Recall** (`/recall`, dorm leaders only) takes an announcement back out of everyone's chat. It walks your own sends newest first: one tap undoes your last announcement, tapping again undoes the one before that. The card says what it is about to delete and asks first, then offers **♻️ Recall all** or **♻️ Just the latest**; when nothing is left it says so and the buttons go away.
+  - Telegram gives a bot **48 hours** to delete its own messages, so that is the whole window. Past it an announcement is not offered rather than offered and then refused.
+  - Residents are not told that something was withdrawn, and anyone who already read it has already read it. Recall deletes the message, not the memory of it.
+  - The receipt is honest about the copies it could not get: ones the resident had already deleted, ones in chats that have blocked the bot, and ones Telegram balked at. Only the last kind is worth retrying, and those stay on the stack so tapping **♻️ Recall** again picks up exactly them.
+  - **Announcements sent before v1.7 cannot be recalled.** The bot only started recording where each copy landed in v1.7, and Telegram has no call that asks a bot what it has sent, so for older sends there is nothing to delete by.
 - Registration (`/start`) normally takes about 20 seconds: name, then room number. If a dorm leader has imported a [resident whitelist](#resident-whitelist-roster), matching residents just confirm their prefilled name and room instead. Everything else is buttons, so residents never have to type a machine name or timer by hand.
 
 More features may be added later; the code is organized so each feature lives in its own file under `bot/handlers/`.
@@ -77,7 +90,10 @@ Everything below is a plain file — edit it and restart the bot (`Ctrl+C` then 
 
   | | Leader | Admin |
   |---|---|---|
-  | `/announce` to everyone | ✅ | ✅ |
+  | `/announce` to everyone, right away | ✅ | ✅ |
+  | `/schedule` an announcement for later | ✅ | ✅ |
+  | `/waiting`, cancel any announcement still to go out | ✅ | ✅ |
+  | `/recall`, undo your own announcements (48 h) | ✅ | ✅ |
   | `🔄 Reset machines` / `/resetmachines` | ❌ | ✅ |
   | `/resetme`, wipe your own registration | ❌ | ✅ |
 

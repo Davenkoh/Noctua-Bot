@@ -17,7 +17,15 @@ from telegram.ext import (
 )
 
 from .. import keyboards
-from . import broadcast, help as help_module, laundry, poll, registration, status
+from . import (
+    broadcast,
+    help as help_module,
+    laundry,
+    poll,
+    recall,
+    registration,
+    status,
+)
 
 __all__ = ["register_all"]
 
@@ -31,6 +39,36 @@ def register_all(application: Application) -> None:
     application.add_handler(registration.onboarding_handler())
     application.add_handler(broadcast.broadcast_handler())
     application.add_handler(poll.poll_handler())
+
+    # A scheduled announcement's receipt outlives the composer that produced
+    # it, and its ❌ Cancel has to still work when the leader scrolls back to
+    # it days later, so that button is a stateless handler too.
+    # /waiting, not /scheduled: /schedule already opens the composer, and two
+    # commands one letter apart that do different things is a trap. The old
+    # spelling stays as an alias because it is what a leader will guess.
+    application.add_handler(
+        CommandHandler(["waiting", "scheduled"], broadcast.scheduled_command)
+    )
+    application.add_handler(
+        CallbackQueryHandler(broadcast.cb_drop, pattern=keyboards.PAT_BC_DROP)
+    )
+
+    # Recall is stateless for the same reason, and for one more: the card
+    # recomputes what is still in reach on every tap, so an old one scrolled
+    # back to acts on what is true now instead of what it was drawn with.
+    application.add_handler(CommandHandler("recall", recall.recall_command))
+    application.add_handler(
+        MessageHandler(filters.TEXT & filters.Regex(keyboards.RX_RECALL), recall.recall_command)
+    )
+    application.add_handler(
+        CallbackQueryHandler(recall.cb_all, pattern=keyboards.PAT_RC_ALL)
+    )
+    application.add_handler(
+        CallbackQueryHandler(recall.cb_one, pattern=keyboards.PAT_RC_ONE)
+    )
+    application.add_handler(
+        CallbackQueryHandler(recall.cb_cancel, pattern=keyboards.PAT_RC_CANCEL)
+    )
 
     # Poll cards live in every resident's DM long after the conversation that
     # created them ended, so their buttons are stateless handlers, not states.

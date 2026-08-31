@@ -29,12 +29,15 @@ COMMANDS = [
 ]
 
 ANNOUNCE = BotCommand("announce", "Send an announcement to everyone")
+SCHEDULE = BotCommand("schedule", "Write an announcement to go out later")
+WAITING = BotCommand("waiting", "Announcements waiting to go out")
 POLL = BotCommand("poll", "Ask everyone who's in")
+RECALL = BotCommand("recall", "Undo an announcement you sent")
 RESET = BotCommand("resetmachines", "Set all machines back to free")
 
 # Leaders can announce and poll; admins can also reset the machines.
-LEADER_COMMANDS = COMMANDS + [ANNOUNCE, POLL]
-ADMIN_COMMANDS = COMMANDS + [ANNOUNCE, POLL, RESET]
+LEADER_COMMANDS = COMMANDS + [ANNOUNCE, SCHEDULE, WAITING, POLL, RECALL]
+ADMIN_COMMANDS = COMMANDS + [ANNOUNCE, SCHEDULE, WAITING, POLL, RECALL, RESET]
 
 
 def menu_for(username: str | None) -> list[BotCommand]:
