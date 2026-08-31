@@ -8,9 +8,9 @@ The persistent menu has two rows, or four for a dorm leader:
 
 ```
 [🧺 Laundry menu]
+[📢 Announce (now or scheduled)]      ← dorm leaders only
+[📋 Poll] [♻️ Recall announcement]    ← dorm leaders only
 [👤 Profile] [❓ Help]
-[📢 Announce (now or scheduled)]   ← dorm leaders only
-[📋 Poll] [♻️ Recall]              ← dorm leaders only
 ```
 
 - **🧺 Laundry menu** lists all four machines with their live state (🟢 free or 🔴 running), plus two sections underneath:
@@ -26,7 +26,7 @@ The persistent menu has two rows, or four for a dorm leader:
   - The draft is not copied until it sends, which is what lets you keep fixing a typo all afternoon. The flip side: leave those messages in your chat with the bot. One you delete before it fires is skipped, and the delivery report says so.
   - The audience is read at send time, so residents who register between scheduling and sending get it too.
   - Scheduled announcements survive a restart. If the bot is down when one is due it still goes out on the next start, unless it is more than 30 minutes late. Past that it is dropped and the leader who wrote it is told, because a notice about this afternoon arriving tonight is worse than one that never arrives.
-- **♻️ Recall** (`/recall`, dorm leaders only) takes an announcement back out of everyone's chat. It walks your own sends newest first: one tap undoes your last announcement, tapping again undoes the one before that. The card says what it is about to delete and asks first, then offers **♻️ Recall all** or **♻️ Just the latest**; when nothing is left it says so and the buttons go away.
+- **♻️ Recall announcement** (`/recall`, dorm leaders only) takes an announcement back out of everyone's chat. It walks your own sends newest first: one tap undoes your last announcement, tapping again undoes the one before that. The card says what it is about to delete and asks first, then offers **♻️ Recall all** or **♻️ Just the latest**; when nothing is left it says so and the buttons go away.
   - Telegram gives a bot **48 hours** to delete its own messages, so that is the whole window. Past it an announcement is not offered rather than offered and then refused.
   - Residents are not told that something was withdrawn, and anyone who already read it has already read it. Recall deletes the message, not the memory of it.
   - The receipt is honest about the copies it could not get: ones the resident had already deleted, ones in chats that have blocked the bot, and ones Telegram balked at. Only the last kind is worth retrying, and those stay on the stack so tapping **♻️ Recall** again picks up exactly them.

@@ -69,7 +69,7 @@ MENU_PROFILE = "👤 Profile"
 MENU_HELP = "❓ Help"
 MENU_ANNOUNCE = "📢 Announce (now or scheduled)"
 MENU_POLL = "📋 Poll"
-MENU_RECALL = "♻️ Recall"
+MENU_RECALL = "♻️ Recall announcement"
 
 # v1 labels: reply keyboards live in the client until the resident triggers a
 # new one, so the old captions must keep routing somewhere sensible.
@@ -83,6 +83,8 @@ LEGACY_ANNOUNCE = "📢 Announce"
 # covers both. The caption still routes to the timed entry, so a leader whose
 # keyboard predates the merge gets what the button promised them.
 LEGACY_SCHEDULE = "📅 Scheduled Announce"
+# Shipped for one night before it said what it recalls.
+LEGACY_RECALL = "♻️ Recall"
 
 # Receiving any of these is proof the sender's reply keyboard predates the
 # current one — Telegram caches it client-side until the bot replaces it, so
@@ -96,6 +98,7 @@ LEGACY_CAPTIONS = frozenset(
         LEGACY_BROADCAST,
         LEGACY_ANNOUNCE,
         LEGACY_SCHEDULE,
+        LEGACY_RECALL,
     }
 )
 
@@ -119,7 +122,7 @@ RX_HELP = _exact(MENU_HELP)
 RX_ANNOUNCE = _exact(MENU_ANNOUNCE, LEGACY_ANNOUNCE, LEGACY_BROADCAST)
 RX_SCHEDULE = _exact(LEGACY_SCHEDULE)
 RX_POLL = _exact(MENU_POLL)
-RX_RECALL = _exact(MENU_RECALL)
+RX_RECALL = _exact(MENU_RECALL, LEGACY_RECALL)
 
 # --- callback patterns (used verbatim by CallbackQueryHandler) ------------
 PAT_HUB = r"^hub$"
@@ -176,15 +179,20 @@ def main_menu(is_leader: bool = False) -> ReplyKeyboardMarkup:
     the timing is the last thing you should have to commit to, not the first.
     ``/schedule`` still opens it straight on the timed step.
 
-    ♻️ Recall sits beside Poll rather than under Announce, which is where it
-    belongs by meaning. A thumb reaching for the announcement door should not
-    be able to land on the button that deletes the last one instead, and the
+    ♻️ Recall announcement sits beside Poll rather than under Announce, which
+    is where it belongs by meaning. A thumb reaching for the announcement door
+    should not be able to land on the button that deletes the last one, and the
     recall card asks before it touches anything, so a stray tap costs a glance.
+
+    Profile and Help go last. They are read once and never again, whereas the
+    rows above them are the reason anybody opens this chat, so the ordering is
+    by how often a thumb wants them rather than by how the bot is built.
     """
-    rows = [[MENU_LAUNDRY], [MENU_PROFILE, MENU_HELP]]
+    rows = [[MENU_LAUNDRY]]
     if is_leader:
         rows.append([MENU_ANNOUNCE])
         rows.append([MENU_POLL, MENU_RECALL])
+    rows.append([MENU_PROFILE, MENU_HELP])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 

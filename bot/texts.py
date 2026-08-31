@@ -38,7 +38,7 @@ COLLECT_RULE_OWNER = (
 BTN_LAUNDRY = "🧺 Laundry menu"
 BTN_ANNOUNCE = "📢 Announce (now or scheduled)"
 BTN_POLL = "📋 Poll"
-BTN_RECALL = "♻️ Recall"
+BTN_RECALL = "♻️ Recall announcement"
 
 GREETING = "🦉 Hi Owlet, <b>{name}</b>!"
 

@@ -1035,7 +1035,17 @@ Leader menu after this change:
 
 ```
 [🧺 Laundry menu]
-[👤 Profile] [❓ Help]
 [📢 Announce (now or scheduled)]
-[📋 Poll] [♻️ Recall]
+[📋 Poll] [♻️ Recall announcement]
+[👤 Profile] [❓ Help]
 ```
+
+## v1.8 amendment (same night): menu order and the recall caption
+
+`♻️ Recall` became `♻️ Recall announcement`. On its own the word is a verb
+with no object, and the one thing it must never be mistaken for is a laundry
+action. `LEGACY_RECALL` keeps the one-night-old caption routing.
+
+Profile and Help moved to the bottom row. They are read once; the rows above
+are why anybody opens the chat. Residents are unaffected either way, their menu
+was already `[🧺 Laundry menu]` over `[👤 Profile] [❓ Help]`.
