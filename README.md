@@ -33,6 +33,14 @@ The persistent menu has two rows, or four for a dorm leader:
   - **Announcements sent before v1.7 cannot be recalled.** The bot only started recording where each copy landed in v1.7, and Telegram has no call that asks a bot what it has sent, so for older sends there is nothing to delete by.
 - Registration (`/start`) normally takes about 20 seconds: name, then room number. If a dorm leader has imported a [resident whitelist](#resident-whitelist-roster), matching residents just confirm their prefilled name and room instead. Everything else is buttons, so residents never have to type a machine name or timer by hand.
 
+### NFC pilot
+
+For a single NFC tag that simply opens the bot, write this HTTPS URL as an NDEF URI record:
+
+`https://t.me/rc4noctuabot`
+
+Telegram must be installed on the scanning phone. The operating system may still open a browser or ask the user to open Telegram.
+
 More features may be added later; the code is organized so each feature lives in its own file under `bot/handlers/`.
 
 ## Create the bot with @BotFather
